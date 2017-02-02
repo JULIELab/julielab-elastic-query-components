@@ -33,6 +33,12 @@ public class HighlightCommand {
 	public static class HlField {
 		public int fragnum = Integer.MIN_VALUE;
 		public int fragsize = Integer.MIN_VALUE;
+		/**
+		 * If the field to be highlighted does not match anything, this
+		 * parameter specifies a default portion of the field value to be
+		 * returned anyway (without any highlighting, obviously).
+		 */
+		public int noMatchSize = Integer.MIN_VALUE;
 		public String field;
 		public SearchServerQuery highlightQuery;
 		public boolean requirefieldmatch = true;

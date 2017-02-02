@@ -57,7 +57,10 @@ public class SearchServerCommand {
 	 */
 	public Multimap<String, String> suggestionCategories;
 	public int start;
-	public int rows;
+	/**
+	 * The value Integer.MIN_VALUE means "not set".
+	 */
+	public int rows = Integer.MIN_VALUE;
 	/**
 	 * The fields for which their original content should be returned. Does only
 	 * work for stored fields, of course.

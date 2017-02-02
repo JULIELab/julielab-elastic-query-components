@@ -326,6 +326,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 						fragsize = hlField.fragsize;
 					if (hlField.fragnum != Integer.MIN_VALUE)
 						fragnum = hlField.fragnum;
+					if(hlField.noMatchSize != Integer.MIN_VALUE)
+						field.noMatchSize(hlField.noMatchSize);
 					field.fragmentSize(fragsize);
 					field.numOfFragments(fragnum);
 					if (null != hlField.highlightQuery) {
