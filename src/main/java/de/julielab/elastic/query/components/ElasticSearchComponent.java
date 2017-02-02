@@ -291,7 +291,10 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		// throw new NotImplementedException();
 		// }
 		srb.setFrom(serverCmd.start);
-		srb.setSize(serverCmd.rows);
+		if (serverCmd.rows >= 0)
+			srb.setSize(serverCmd.rows);
+		else
+			srb.setSize(0);
 
 		if (null != serverCmd.aggregationCmds) {
 			for (AggregationCommand aggCmd : serverCmd.aggregationCmds.values()) {
@@ -326,7 +329,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 						fragsize = hlField.fragsize;
 					if (hlField.fragnum != Integer.MIN_VALUE)
 						fragnum = hlField.fragnum;
-					if(hlField.noMatchSize != Integer.MIN_VALUE)
+					if (hlField.noMatchSize != Integer.MIN_VALUE)
 						field.noMatchSize(hlField.noMatchSize);
 					field.fragmentSize(fragsize);
 					field.numOfFragments(fragnum);
