@@ -60,7 +60,7 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 		for (Entry<String, SearchHitField> entry : fields.entrySet()) {
 			sb.append(entry.getKey());
 			sb.append(": ");
-			sb.append(entry.getValue().getValue());
+			sb.append(entry.getValue().getValue().toString());
 			sb.append("\n");
 		}
 		return sb.toString();

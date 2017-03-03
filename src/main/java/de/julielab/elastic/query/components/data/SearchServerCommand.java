@@ -53,17 +53,19 @@ public class SearchServerCommand {
 	 */
 	public String suggestionField;
 	/**
-	 * For some suggester types, e.g. completion suggester: The suggestion categories.
+	 * For some suggester types, e.g. completion suggester: The suggestion
+	 * categories.
 	 */
 	public Multimap<String, String> suggestionCategories;
 	public int start;
 	/**
 	 * The value Integer.MIN_VALUE means "not set".
 	 */
-	public int rows = Integer.MIN_VALUE;
+	public int rows = 10;
 	/**
 	 * The fields for which their original content should be returned. Does only
-	 * work for stored fields, of course.
+	 * work for stored fields, of course. A null value (default) causes all
+	 * fields to be returned. To return no fields, set an empty list.
 	 */
 	public List<String> fieldsToReturn;
 	/**
@@ -80,7 +82,7 @@ public class SearchServerCommand {
 	public boolean filterReviews;
 	public List<SortCommand> sortCmds;
 	/**
-	 * The index to perform the search on. 
+	 * The index to perform the search on.
 	 * 
 	 */
 	public String index;

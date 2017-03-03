@@ -11,6 +11,7 @@ import org.apache.commons.lang.NotImplementedException;
 import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.suggest.SuggestResponse;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
@@ -55,11 +56,13 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	private Suggest suggest;
 	private Map<String, Aggregation> aggregationsByName;
 	private QueryError queryError;
+	private Client client;
 
-	public ElasticSearchServerResponse(Logger log, SearchResponse response, List<FacetCommand> facetCmds) {
+	public ElasticSearchServerResponse(Logger log, SearchResponse response, List<FacetCommand> facetCmds, Client client) {
 		this.log = log;
 		this.response = response;
 		this.facetCmds = facetCmds;
+		this.client = client;
 		this.suggest = response.getSuggest();
 		if (null != response.getAggregations())
 			this.aggregationsByName = response.getAggregations().asMap();
@@ -71,7 +74,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	}
 
 	public ElasticSearchServerResponse(Logger log) {
-		this(log, null, null);
+		this(log, null, null, null);
 	}
 
 	public IAggregationResult getAggregationResult(AggregationCommand aggCmd) {
@@ -247,6 +250,31 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		}
 		return documents;
 	}
+	
+	@Override
+	public Map<String, Map<String, List<String>>> getHighlighting() {
+		SearchHits hits = response.getHits();
+		Map<String, Map<String, List<String>>> highlighting = new HashMap<>(hits.hits().length);
+		
+		for (SearchHit hit : hits) {
+			String docId = hit.getId();
+			Map<String, HighlightField> esHLs = hit.getHighlightFields();
+			Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
+			
+			for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
+				String fieldName = esFieldHLs.getKey();
+				HighlightField hf = esFieldHLs.getValue();
+				
+				List<String> hLFragments = new ArrayList<>(hf.fragments().length);
+				for (Text esHLFragments : hf.getFragments())
+					hLFragments.add(esHLFragments.string());
+				fieldHLs.put(fieldName, hLFragments);
+			}
+			
+			highlighting.put(docId, fieldHLs);
+		}
+		return highlighting;
+	}
 
 	@Override
 	public long getNumFound() {
@@ -270,31 +298,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 			}
 		}
 		return 0;
-	}
-
-	@Override
-	public Map<String, Map<String, List<String>>> getHighlighting() {
-		SearchHits hits = response.getHits();
-		Map<String, Map<String, List<String>>> semedicoHLs = new HashMap<>(hits.hits().length);
-
-		for (SearchHit hit : hits) {
-			String docId = hit.getId();
-			Map<String, HighlightField> esHLs = hit.getHighlightFields();
-			Map<String, List<String>> semedicoFieldHLs = new HashMap<>(esHLs.size());
-
-			for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
-				String fieldName = esFieldHLs.getKey();
-				HighlightField hf = esFieldHLs.getValue();
-
-				List<String> semedicoHLFragments = new ArrayList<>(hf.fragments().length);
-				for (Text esHLFragments : hf.getFragments())
-					semedicoHLFragments.add(esHLFragments.string());
-				semedicoFieldHLs.put(fieldName, semedicoHLFragments);
-			}
-
-			semedicoHLs.put(docId, semedicoFieldHLs);
-		}
-		return semedicoHLs;
 	}
 
 	/**

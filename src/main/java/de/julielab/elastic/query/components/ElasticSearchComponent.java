@@ -165,26 +165,11 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, facetCmds);
+					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, facetCmds, client);
 					searchCarrier.addSearchServerResponse(serverRsp);
 
 					if (null == response) {
 						serverRsp.setQueryError(QueryError.NO_RESPONSE);
-						// SemedicoSearchResult errorResult = new
-						// SemedicoSearchResult(
-						// searchCarrier.searchCmd.semedicoQuery);
-						// errorResult.errorMessage = "An unexpected error
-						// occurred while executing your query. If this problem
-						// persists, please send the steps to reproduce this
-						// error to the e-mail address given at the entry
-						// page.";
-						// searchCarrier.searchResult = errorResult;
-						// log.error(
-						// "ElasticSearch search command did not return a
-						// response. Please check the server logs for errors.
-						// The query was: {}",
-						// searchRequestBuilders.get(i).toString());
-						// return true;
 					}
 				}
 			}
@@ -237,6 +222,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		if (null == serverCmd.fieldsToReturn)
 			serverCmd.addField("*");
 
+		if (serverCmd.index == null)
+			throw new IllegalArgumentException("The search command does not define an index to search on.");
 		SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
 		if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
 			srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
@@ -244,52 +231,15 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		srb.setFetchSource(serverCmd.fetchSource);
 		// srb.setExplain(true);
 
-		// List<FilterBuilder> searchFilters = new ArrayList<>();
 
-		// ------- Build query
 		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
-		// ------ End Build Query
-		// ------ Apply filter(s) to the query so make it a filtered query;
-		// this is different from post-filtering!
-		// if (null != serverCmd.filterCmd) {
-		// if
-		// (QueryFilterCommand.class.equals(serverCmd.filterCmd.getClass()))
-		// {
-		// QueryFilterCommand queryFilterCmd = (QueryFilterCommand)
-		// serverCmd.filterCmd;
-		// QueryBuilder filterQuery = buildQuery(queryFilterCmd.query);
-		// QueryFilterBuilder queryFilterBuilder =
-		// FilterBuilders.queryFilter(filterQuery);
-		// queryBuilder = QueryBuilders.filteredQuery(queryBuilder,
-		// queryFilterBuilder);
-		// }
-		// throw new NotImplementedException();
-		// }
-		// ------ Apply scoring to query
-		// if (null != serverCmd.scoringCommand) {
-		// ScoringCommand scoringCommand = serverCmd.scoringCommand;
-		// FunctionScoreQueryBuilder fsqb = new
-		// FunctionScoreQueryBuilder(queryBuilder);
-		// fsqb.add(ScoreFunctionBuilders.fieldValueFactorFunction(scoringCommand.weightField)
-		// .modifier(Modifier.valueOf(scoringCommand.weightFieldStrategy.name())));
-		// srb.setQuery(fsqb);
-		// } else {
-		// no scoring command
 		srb.setQuery(queryBuilder);
-		// }
 
 		if (null != serverCmd.fieldsToReturn)
 			for (String field : serverCmd.fieldsToReturn) {
 				srb.addField(field);
 			}
-		// if (null != serverCmd.filterQueries) {
-		// for (String filterQuery : serverCmd.filterQueries) {
-		// QueryFilterBuilder queryFilter =
-		// FilterBuilders.queryFilter(QueryBuilders.queryString(filterQuery));
-		// searchFilters.add(queryFilter);
-		// }
-		// throw new NotImplementedException();
-		// }
+
 		srb.setFrom(serverCmd.start);
 		if (serverCmd.rows >= 0)
 			srb.setSize(serverCmd.rows);
@@ -367,32 +317,6 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 				srb.addSort(sortCmd.field, sort);
 			}
 		}
-
-		if (serverCmd.filterReviews) {
-			// QueryFilterBuilder queryFilter = FilterBuilders.queryFilter(
-			// QueryBuilders.queryString(IIndexInformationService.FACET_PUBTYPES
-			// + ":" + REVIEW_TERM));
-			// searchFilters.add(queryFilter);
-			throw new NotImplementedException();
-		}
-
-		// if (searchFilters.size() > 0)
-		// srb.setPostFilter(FilterBuilders.andFilter(searchFilters.toArray(new
-		// FilterBuilder[searchFilters.size()])));
-		// throw new NotImplementedException();
-
-		// if (null != serverCmd.suggestionText) {
-		// CompletionSuggestionBuilder suggestionBuilder =
-		// new
-		// CompletionSuggestionBuilder("").field(serverCmd.suggestionField).text(serverCmd.suggestionText)
-		// .size(serverCmd.rows);
-		// if (null != serverCmd.suggestionFacets &&
-		// serverCmd.suggestionFacets.size() > 0)
-		// suggestionBuilder.addContextField(ITermSuggestionService.Fields.FACETS,
-		// serverCmd.suggestionFacets);
-		// srb.addSuggestion(suggestionBuilder);
-		//
-		// }
 
 		if (null != serverCmd.postFilterQuery) {
 			QueryBuilder postFilter = buildQuery(serverCmd.postFilterQuery);
