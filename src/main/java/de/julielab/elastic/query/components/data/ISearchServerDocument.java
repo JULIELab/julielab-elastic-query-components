@@ -3,6 +3,8 @@ package de.julielab.elastic.query.components.data;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.NotImplementedException;
+
 public interface ISearchServerDocument {
 	/**
 	 * Shortcut to {@link #getFieldValue(String)}.
@@ -14,9 +16,19 @@ public interface ISearchServerDocument {
 
 	<V> V getFieldValue(String fieldName);
 
-	<V> V getFieldPayload(String fieldName);
-
 	List<Object> getFieldValues(String fieldName);
+
+	float getScore();
+
+	/**
+	 * Expects a map from field name to a list of highlighted strings for the
+	 * respective field.
+	 * 
+	 * @param highlightedFields
+	 */
+	default void setHighlighting(Map<String, List<String>> highlightedFields) {
+		throw new NotImplementedException();
+	};
 
 	/**
 	 * <p>
@@ -33,13 +45,23 @@ public interface ISearchServerDocument {
 	 * 
 	 * @return The inner hits of the document, ordered by nested field name.
 	 */
-	Map<String, List<ISearchServerDocument>> getInnerHits();
+	default public Map<String, List<ISearchServerDocument>> getInnerHits() {
+		throw new NotImplementedException();
+	}
 
-	String getId();
+	default public String getId() {
+		throw new NotImplementedException();
+	}
 
-	String getIndexType();
+	default public String getIndexType() {
+		throw new NotImplementedException();
+	}
 
-	Map<String, List<String>> getHighlights();
-
-	float getScore();
+	default public Map<String, List<String>> getHighlights() {
+		throw new NotImplementedException();
+	}
+	
+	default <V> V getFieldPayload(String fieldName) {
+		throw new NotImplementedException();
+	}
 }

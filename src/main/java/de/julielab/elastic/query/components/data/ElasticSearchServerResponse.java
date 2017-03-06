@@ -3,16 +3,19 @@ package de.julielab.elastic.query.components.data;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
-import org.apache.commons.lang.NotImplementedException;
 import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.suggest.SuggestResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.text.Text;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
@@ -173,16 +176,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 					}
 
 					@Override
-					public <V> V getFieldPayload(String fieldName) {
-						throw new NotImplementedException();
-					}
-
-					@Override
-					public Map<String, List<ISearchServerDocument>> getInnerHits() {
-						throw new NotImplementedException();
-					}
-
-					@Override
 					public String getId() {
 						return searchHit.getId();
 					}
@@ -190,11 +183,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 					@Override
 					public String getIndexType() {
 						return searchHit.getType();
-					}
-
-					@Override
-					public Map<String, List<String>> getHighlights() {
-						throw new NotImplementedException();
 					}
 
 					@Override
@@ -236,19 +224,66 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	}
 
 	@Override
-	public List<ISearchServerDocument> getDocumentResults() {
+	public Stream<ISearchServerDocument> getDocumentResults() {
 		if (searchServerNotReachable) {
 			log.debug("Not returning any document results because the server was not reachable.");
-			return Collections.emptyList();
+			return Stream.empty(); 
 		}
 
-		List<ISearchServerDocument> documents = new ArrayList<>(response.getHits().hits().length);
-		final SearchHits hits = response.getHits();
-		for (final SearchHit hit : hits) {
-			ISearchServerDocument document = new ElasticSearchDocumentHit(hit);
-			documents.add(document);
-		}
-		return documents;
+		Iterator<ISearchServerDocument> documentIt = new Iterator<ISearchServerDocument>() {
+
+			private int pos = 0;
+			private SearchHit[] currentHits = response.getHits().getHits();
+			
+			@Override
+			public boolean hasNext() {
+				if (pos < currentHits.length) {
+					log.trace("There are more documents in the current response.");
+					return true;
+				}
+				else if (!StringUtils.isBlank(response.getScrollId())) {
+					log.debug("No more documents present in the current response but got scroll ID {}. Querying next batch.", response.getScrollId());
+					SearchResponse scrollResponse = client.prepareSearchScroll(response.getScrollId()).setScroll(TimeValue.timeValueMinutes(5)).execute()
+							.actionGet();
+					currentHits = scrollResponse.getHits().getHits();
+					log.trace("Received {} new hits from scroll request.", currentHits.length);
+					if (currentHits.length > 0)
+						return true;
+				}
+				log.debug("No more hits returned from scrolling request. Closing the scroll with ID {}", response.getScrollId());
+				client.prepareClearScroll().addScrollId(response.getScrollId()).execute();
+				return false;
+			}
+
+			@Override
+			public ISearchServerDocument next() {
+				if (!hasNext())
+					return null;
+				log.trace("Returning next document at position {} of the current scroll batch.", pos);
+				SearchHit hit = currentHits[pos++];
+				// get Highlighting, if any
+				Map<String, HighlightField> esHLs = hit.getHighlightFields();
+				// this map will for each highlighted field name contain the list of highlights
+				Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
+				for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
+					String fieldName = esFieldHLs.getKey();
+					HighlightField hf = esFieldHLs.getValue();
+					
+					List<String> hLFragments = new ArrayList<>(hf.fragments().length);
+					for (Text esHLFragments : hf.getFragments())
+						hLFragments.add(esHLFragments.string());
+					fieldHLs.put(fieldName, hLFragments);
+				}
+				
+				ISearchServerDocument document = new ElasticSearchDocumentHit(hit);
+				document.setHighlighting(fieldHLs);
+				return document;
+			}
+			
+		};
+		
+		Iterable<ISearchServerDocument> documentIterable = () -> documentIt;
+		return StreamSupport.stream(documentIterable.spliterator(), false);
 	}
 	
 	@Override
@@ -432,31 +467,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 					@Override
 					public <V> V getFieldPayload(String fieldName) {
 						return (V) payload.get(fieldName);
-					}
-
-					@Override
-					public String toString() {
-						throw new NotImplementedException();
-					}
-
-					@Override
-					public Map<String, List<ISearchServerDocument>> getInnerHits() {
-						throw new NotImplementedException();
-					}
-
-					@Override
-					public String getId() {
-						throw new NotImplementedException();
-					}
-
-					@Override
-					public String getIndexType() {
-						throw new NotImplementedException();
-					}
-
-					@Override
-					public Map<String, List<String>> getHighlights() {
-						throw new NotImplementedException();
 					}
 
 					@Override
