@@ -97,6 +97,13 @@ public class SearchServerCommand {
 	public Map<String, SearchServerQuery> namedQueries;
 	public SearchServerQuery postFilterQuery;
 	public List<String> indexTypes;
+	/**
+	 * Causes the return of all results of the query, not only a page or a
+	 * batch. May require additional requests to the server which are
+	 * automatically done by the
+	 * {@link ElasticSearchServerResponse#getDocumentResults()}.
+	 */
+	public boolean downloadCompleteResults;
 
 	public void addField(String field) {
 		if (null == fieldsToReturn)

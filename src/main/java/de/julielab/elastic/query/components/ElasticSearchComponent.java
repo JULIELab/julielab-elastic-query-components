@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.commons.lang.NotImplementedException;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.elasticsearch.action.search.MultiSearchRequestBuilder;
@@ -17,6 +16,7 @@ import org.elasticsearch.action.suggest.SuggestResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
 import org.elasticsearch.index.query.MatchAllQueryBuilder;
@@ -230,6 +230,9 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 		srb.setFetchSource(serverCmd.fetchSource);
 		// srb.setExplain(true);
+		
+		if (serverCmd.downloadCompleteResults);
+		srb.setScroll(TimeValue.timeValueMinutes(5));
 
 
 		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
