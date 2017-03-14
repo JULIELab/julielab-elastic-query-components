@@ -2,6 +2,7 @@ package de.julielab.elastic.query.components.data;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.commons.lang.NotImplementedException;
 
@@ -14,7 +15,7 @@ public interface ISearchServerDocument {
 	 */
 	<V> V get(String fieldName);
 
-	<V> V getFieldValue(String fieldName);
+	<V> Optional<V> getFieldValue(String fieldName);
 
 	List<Object> getFieldValues(String fieldName);
 

@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 
 import org.apache.commons.lang.NotImplementedException;
 import org.elasticsearch.common.text.Text;
@@ -33,11 +34,9 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	}
 
 	@Override
-	public <V> V getFieldValue(String fieldName) {
+	public <V> Optional<V> getFieldValue(String fieldName) {
 		SearchHitField field = hit.field(fieldName);
-		if (null == field)
-			return null;
-		return field.getValue();
+		return Optional.ofNullable(field.getValue());
 	}
 
 	@Override

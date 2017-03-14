@@ -7,6 +7,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -61,7 +62,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	private QueryError queryError;
 	private Client client;
 
-	public ElasticSearchServerResponse(Logger log, SearchResponse response, List<FacetCommand> facetCmds, Client client) {
+	public ElasticSearchServerResponse(Logger log, SearchResponse response, List<FacetCommand> facetCmds,
+			Client client) {
 		this.log = log;
 		this.response = response;
 		this.facetCmds = facetCmds;
@@ -165,8 +167,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 					@SuppressWarnings("unchecked")
 					@Override
-					public <V> V getFieldValue(String fieldName) {
-						return (V) source.get(fieldName).getValue();
+					public <V> Optional<V> getFieldValue(String fieldName) {
+						return Optional.ofNullable((V) source.get(fieldName).getValue());
 					}
 
 					@SuppressWarnings("unchecked")
@@ -227,30 +229,32 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	public Stream<ISearchServerDocument> getDocumentResults() {
 		if (searchServerNotReachable) {
 			log.debug("Not returning any document results because the server was not reachable.");
-			return Stream.empty(); 
+			return Stream.empty();
 		}
 
 		Iterator<ISearchServerDocument> documentIt = new Iterator<ISearchServerDocument>() {
 
 			private int pos = 0;
 			private SearchHit[] currentHits = response.getHits().getHits();
-			
+
 			@Override
 			public boolean hasNext() {
 				if (pos < currentHits.length) {
 					log.trace("There are more documents in the current response.");
 					return true;
-				}
-				else if (!StringUtils.isBlank(response.getScrollId())) {
-					log.debug("No more documents present in the current response but got scroll ID {}. Querying next batch.", response.getScrollId());
-					SearchResponse scrollResponse = client.prepareSearchScroll(response.getScrollId()).setScroll(TimeValue.timeValueMinutes(5)).execute()
-							.actionGet();
+				} else if (!StringUtils.isBlank(response.getScrollId())) {
+					log.debug(
+							"No more documents present in the current response but got scroll ID {}. Querying next batch.",
+							response.getScrollId());
+					SearchResponse scrollResponse = client.prepareSearchScroll(response.getScrollId())
+							.setScroll(TimeValue.timeValueMinutes(5)).execute().actionGet();
 					currentHits = scrollResponse.getHits().getHits();
 					log.trace("Received {} new hits from scroll request.", currentHits.length);
 					if (currentHits.length > 0)
 						return true;
 				}
-				log.debug("No more hits returned from scrolling request. Closing the scroll with ID {}", response.getScrollId());
+				log.debug("No more hits returned from scrolling request. Closing the scroll with ID {}",
+						response.getScrollId());
 				client.prepareClearScroll().addScrollId(response.getScrollId()).execute();
 				return false;
 			}
@@ -263,49 +267,50 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 				SearchHit hit = currentHits[pos++];
 				// get Highlighting, if any
 				Map<String, HighlightField> esHLs = hit.getHighlightFields();
-				// this map will for each highlighted field name contain the list of highlights
+				// this map will for each highlighted field name contain the
+				// list of highlights
 				Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
 				for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
 					String fieldName = esFieldHLs.getKey();
 					HighlightField hf = esFieldHLs.getValue();
-					
+
 					List<String> hLFragments = new ArrayList<>(hf.fragments().length);
 					for (Text esHLFragments : hf.getFragments())
 						hLFragments.add(esHLFragments.string());
 					fieldHLs.put(fieldName, hLFragments);
 				}
-				
+
 				ISearchServerDocument document = new ElasticSearchDocumentHit(hit);
 				document.setHighlighting(fieldHLs);
 				return document;
 			}
-			
+
 		};
-		
+
 		Iterable<ISearchServerDocument> documentIterable = () -> documentIt;
 		return StreamSupport.stream(documentIterable.spliterator(), false);
 	}
-	
+
 	@Override
 	public Map<String, Map<String, List<String>>> getHighlighting() {
 		SearchHits hits = response.getHits();
 		Map<String, Map<String, List<String>>> highlighting = new HashMap<>(hits.hits().length);
-		
+
 		for (SearchHit hit : hits) {
 			String docId = hit.getId();
 			Map<String, HighlightField> esHLs = hit.getHighlightFields();
 			Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
-			
+
 			for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
 				String fieldName = esFieldHLs.getKey();
 				HighlightField hf = esFieldHLs.getValue();
-				
+
 				List<String> hLFragments = new ArrayList<>(hf.fragments().length);
 				for (Text esHLFragments : hf.getFragments())
 					hLFragments.add(esHLFragments.string());
 				fieldHLs.put(fieldName, hLFragments);
 			}
-			
+
 			highlighting.put(docId, fieldHLs);
 		}
 		return highlighting;
@@ -450,17 +455,19 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 					@SuppressWarnings("unchecked")
 					@Override
-					public <V> V getFieldValue(String fieldName) {
-						// todo the field "text" is the special option field
+					public <V> Optional<V> getFieldValue(String fieldName) {
+						// the field "text" is the special option field
 						// that holds the actually suggested text
 						if (fieldName.equals("text"))
-							return (V) option.getText().toString();
+							return Optional
+									.ofNullable((V) (option.getText() != null ? option.getText().toString() : null));
 						return getFieldPayload(fieldName);
 					}
 
+					@SuppressWarnings("unchecked")
 					@Override
 					public <V> V get(String fieldName) {
-						return getFieldValue(fieldName);
+						return (V)getFieldValue(fieldName).get();
 					}
 
 					@SuppressWarnings("unchecked")
