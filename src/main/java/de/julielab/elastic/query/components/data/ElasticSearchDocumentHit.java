@@ -26,29 +26,29 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	}
 
 	@Override
-	public List<Object> getFieldValues(String fieldName) {
+	public Optional<List<Object>> getFieldValues(String fieldName) {
 		SearchHitField field = hit.field(fieldName);
 		if (null == field)
-			return null;
-		return field.getValues();
+			return Optional.empty();
+		return Optional.ofNullable(field.getValues());
 	}
 
 	@Override
 	public <V> Optional<V> getFieldValue(String fieldName) {
 		SearchHitField field = hit.field(fieldName);
+		return Optional.ofNullable(field).map(f -> f.getValue());
+	}
+
+	@Override
+	public <V> Optional<V> get(String fieldName) {
+		SearchHitField field = hit.field(fieldName);
+		if (null == field)
+			return Optional.empty();
 		return Optional.ofNullable(field.getValue());
 	}
 
 	@Override
-	public <V> V get(String fieldName) {
-		SearchHitField field = hit.field(fieldName);
-		if (null == field)
-			return null;
-		return field.getValue();
-	}
-
-	@Override
-	public <V> V getFieldPayload(String fieldName) {
+	public <V> Optional<V> getFieldPayload(String fieldName) {
 		throw new NotImplementedException();
 	}
 

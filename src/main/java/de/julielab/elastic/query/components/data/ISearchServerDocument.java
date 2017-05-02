@@ -13,23 +13,13 @@ public interface ISearchServerDocument {
 	 * @param fieldName
 	 * @return
 	 */
-	<V> V get(String fieldName);
+	<V> Optional<V> get(String fieldName);
 
 	<V> Optional<V> getFieldValue(String fieldName);
 
-	List<Object> getFieldValues(String fieldName);
+	Optional<List<Object>> getFieldValues(String fieldName);
 
 	float getScore();
-
-	/**
-	 * Expects a map from field name to a list of highlighted strings for the
-	 * respective field.
-	 * 
-	 * @param highlightedFields
-	 */
-	default void setHighlighting(Map<String, List<String>> highlightedFields) {
-		throw new NotImplementedException();
-	};
 
 	/**
 	 * <p>
@@ -62,7 +52,7 @@ public interface ISearchServerDocument {
 		throw new NotImplementedException();
 	}
 	
-	default <V> V getFieldPayload(String fieldName) {
+	default <V> Optional<V> getFieldPayload(String fieldName) {
 		throw new NotImplementedException();
 	}
 }

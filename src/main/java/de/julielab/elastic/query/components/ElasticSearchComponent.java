@@ -610,6 +610,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		if (query.clauses == null || query.clauses.isEmpty())
 			throw new IllegalStateException("A BoolQuery without any query clauses was given.");
 		for (BoolClause clause : query.clauses) {
+			if (clause.occur == null)
+				throw new IllegalStateException("Encountered boolean query clause without a set \"occur\" property.");
 			for (SearchServerQuery searchServerQuery : clause.queries) {
 				QueryBuilder clauseQuery = buildQuery(searchServerQuery);
 				if (clauseQuery == null)

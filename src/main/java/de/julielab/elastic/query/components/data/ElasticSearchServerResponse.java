@@ -161,8 +161,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 				ISearchServerDocument serverDoc = new ISearchServerDocument() {
 
 					@Override
-					public List<Object> getFieldValues(String fieldName) {
-						return (List<Object>) source.get(fieldName).getValues();
+					public Optional<List<Object>> getFieldValues(String fieldName) {
+						return Optional.ofNullable((List<Object>) source.get(fieldName).getValues());
 					}
 
 					@SuppressWarnings("unchecked")
@@ -173,8 +173,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 					@SuppressWarnings("unchecked")
 					@Override
-					public <V> V get(String fieldName) {
-						return ((V) source.get(fieldName).getValue());
+					public <V> Optional<V> get(String fieldName) {
+						return Optional.ofNullable(((V) source.get(fieldName).getValue()));
 					}
 
 					@Override
@@ -250,12 +250,17 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 							.setScroll(TimeValue.timeValueMinutes(5)).execute().actionGet();
 					currentHits = scrollResponse.getHits().getHits();
 					log.trace("Received {} new hits from scroll request.", currentHits.length);
+					pos = 0;
 					if (currentHits.length > 0)
 						return true;
 				}
-				log.debug("No more hits returned from scrolling request. Closing the scroll with ID {}",
-						response.getScrollId());
-				client.prepareClearScroll().addScrollId(response.getScrollId()).execute();
+				log.debug("No more hits returned from scrolling request.");
+				pos = Integer.MAX_VALUE;
+				if (response.getScrollId() != null) {
+					log.debug("Closing the scroll with ID {}", response.getScrollId());
+					client.prepareClearScroll().addScrollId(response.getScrollId()).execute();
+					response.scrollId(null);
+				}
 				return false;
 			}
 
@@ -281,7 +286,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 				}
 
 				ISearchServerDocument document = new ElasticSearchDocumentHit(hit);
-				document.setHighlighting(fieldHLs);
 				return document;
 			}
 
@@ -449,7 +453,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 				ISearchServerDocument document = new ISearchServerDocument() {
 
 					@Override
-					public List<Object> getFieldValues(String fieldName) {
+					public Optional<List<Object>> getFieldValues(String fieldName) {
 						return getFieldPayload(fieldName);
 					}
 
@@ -466,14 +470,14 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 					@SuppressWarnings("unchecked")
 					@Override
-					public <V> V get(String fieldName) {
-						return (V)getFieldValue(fieldName).get();
+					public <V> Optional<V> get(String fieldName) {
+						return Optional.ofNullable((V) getFieldValue(fieldName).get());
 					}
 
 					@SuppressWarnings("unchecked")
 					@Override
-					public <V> V getFieldPayload(String fieldName) {
-						return (V) payload.get(fieldName);
+					public <V> Optional<V> getFieldPayload(String fieldName) {
+						return Optional.ofNullable((V) payload.get(fieldName));
 					}
 
 					@Override
