@@ -1,25 +1,21 @@
 package de.julielab.elastic.query.services;
 
-import static org.elasticsearch.node.NodeBuilder.nodeBuilder;
-
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
+import org.apache.commons.lang.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.node.Node;
-import org.elasticsearch.plugin.deletebyquery.DeleteByQueryPlugin;
+import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
-
-import de.julielab.elastic.query.services.ISearchClient;
 
 public class ElasticSearchClient implements ISearchClient {
 	private String clusterName;
 	private String host;
-	private Node node;
 	private int port;
 	private TransportClient transportClient;
 	private Logger log;
@@ -32,29 +28,23 @@ public class ElasticSearchClient implements ISearchClient {
 	}
 
 	public Node getNode() {
-		if (null == node) {
-			log.info("Starting up a node via Zen Discovery to ElasticSearch cluster names \"{}\".", clusterName);
-			node = nodeBuilder().client(true).clusterName(clusterName).node();
-		}
-		return node;
+		throw new NotImplementedException();
 	}
 
 	public Client getNodeClient() {
 		return getNode().client();
 	}
 
+	@SuppressWarnings("resource")
 	public Client getTransportClient() {
 		try {
 			if (null == transportClient) {
-				log.info("Connecting to a ElasticSearch cluster {} via socket connection \"{}:{}\".", new Object[]{clusterName, host, port});
+				log.info("Connecting to a ElasticSearch cluster {} via socket connection \"{}:{}\".",
+						new Object[] { clusterName, host, port });
 
-				Settings settings = Settings.settingsBuilder().put("cluster.name", clusterName)
-						.build();
-				// since the DeleteByQuery functionality is a plugin, we
-				// also have to register it here; it won't work
-				// otherwise and throw an NPE
-				transportClient = TransportClient.builder().addPlugin(DeleteByQueryPlugin.class).settings(settings).build();
-				transportClient.addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(host), port));
+				Settings settings = Settings.builder().put("cluster.name", clusterName).build();
+				transportClient = new PreBuiltTransportClient(settings)
+						.addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(host), port));
 			}
 			return transportClient;
 		} catch (UnknownHostException e) {
@@ -64,8 +54,6 @@ public class ElasticSearchClient implements ISearchClient {
 
 	@Override
 	public void shutdown() {
-		if (null != node)
-			node.close();
 		if (null != transportClient)
 			transportClient.close();
 

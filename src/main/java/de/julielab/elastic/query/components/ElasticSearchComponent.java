@@ -1,56 +1,58 @@
 package de.julielab.elastic.query.components;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
+import org.apache.lucene.search.join.ScoreMode;
 import org.elasticsearch.action.search.MultiSearchRequestBuilder;
 import org.elasticsearch.action.search.MultiSearchResponse;
 import org.elasticsearch.action.search.MultiSearchResponse.Item;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.suggest.SuggestRequestBuilder;
-import org.elasticsearch.action.suggest.SuggestResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
+import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
+import org.elasticsearch.index.query.InnerHitBuilder;
 import org.elasticsearch.index.query.MatchAllQueryBuilder;
+import org.elasticsearch.index.query.MatchPhraseQueryBuilder;
 import org.elasticsearch.index.query.MatchQueryBuilder;
-import org.elasticsearch.index.query.MatchQueryBuilder.Operator;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
 import org.elasticsearch.index.query.NestedQueryBuilder;
+import org.elasticsearch.index.query.Operator;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.QueryStringQueryBuilder;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.index.query.TermsQueryBuilder;
 import org.elasticsearch.index.query.WildcardQueryBuilder;
+import org.elasticsearch.index.query.functionscore.FieldValueFactorFunctionBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
-import org.elasticsearch.index.query.functionscore.fieldvaluefactor.FieldValueFactorFunctionBuilder;
-import org.elasticsearch.index.query.support.QueryInnerHitBuilder;
 import org.elasticsearch.script.Script;
-import org.elasticsearch.script.ScriptService.ScriptType;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
-import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsBuilder;
+import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
-import org.elasticsearch.search.aggregations.bucket.terms.TermsBuilder;
-import org.elasticsearch.search.aggregations.metrics.max.MaxBuilder;
-import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsBuilder;
-import org.elasticsearch.search.highlight.HighlightBuilder.Field;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.aggregations.bucket.terms.support.IncludeExclude;
+import org.elasticsearch.search.aggregations.metrics.max.MaxAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
+import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder.Field;
 import org.elasticsearch.search.sort.SortOrder;
+import org.elasticsearch.search.suggest.SuggestBuilder;
+import org.elasticsearch.search.suggest.SuggestBuilders;
 import org.elasticsearch.search.suggest.completion.CompletionSuggestionBuilder;
 import org.slf4j.Logger;
-
-import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
 
 import de.julielab.elastic.query.components.data.ElasticSearchServerResponse;
 import de.julielab.elastic.query.components.data.FacetCommand;
@@ -96,18 +98,6 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	private static final String SEMEDICO_DEFAULT_SCRIPT_LANG = "groovy";
 	private Logger log;
 	private Client client;
-	private static final Function<String, String> encloseTermsFunction = new Function<String, String>() {
-
-		@Override
-		public String apply(String input) {
-			StringBuilder sb = new StringBuilder();
-			sb.append("(");
-			sb.append(input);
-			sb.append(")");
-			return sb.toString();
-		}
-
-	};
 
 	public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
 		this.log = log;
@@ -134,7 +124,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		// We should just take care that the results are ordered in a parallel
 		// way to the server commands, see at the end of the method.
 		List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverCmds.size());
-		List<SuggestRequestBuilder> suggestionBuilders = new ArrayList<>(serverCmds.size());
+		List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverCmds.size());
 		log.debug("Number of searchs server commands: {}", serverCmds.size());
 		for (int i = 0; i < serverCmds.size(); i++) {
 			log.debug("Configuration ElasticSearch query for server command {}", i);
@@ -165,7 +155,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, facetCmds, client);
+					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, facetCmds,
+							client);
 					searchCarrier.addSearchServerResponse(serverRsp);
 
 					if (null == response) {
@@ -174,9 +165,9 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 				}
 			}
 			if (!suggestionBuilders.isEmpty()) {
-				for (SuggestRequestBuilder suggestBuilder : suggestionBuilders) {
-					SuggestResponse suggestResponse = suggestBuilder.execute().actionGet();
-					searchCarrier.addSearchServerResponse(new ElasticSearchServerResponse(suggestResponse));
+				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
+					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
+					searchCarrier.addSearchServerResponse(new ElasticSearchServerResponse(log, suggestResponse, null, client));
 				}
 			}
 			w.stop();
@@ -198,23 +189,15 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		return false;
 	}
 
-	protected void handleSuggestionRequest(List<SuggestRequestBuilder> suggestBuilders, SearchServerCommand serverCmd) {
-		CompletionSuggestionBuilder suggestionBuilder = new CompletionSuggestionBuilder("")
-				.field(serverCmd.suggestionField).text(serverCmd.suggestionText).size(serverCmd.rows);
-		if (null != serverCmd.suggestionCategories && serverCmd.suggestionCategories.size() > 0) {
-			for (String context : serverCmd.suggestionCategories.keySet()) {
-				for (String category : serverCmd.suggestionCategories.get(context))
-					suggestionBuilder.addCategory(context, category);
-			}
-		}
-
-		SuggestRequestBuilder suggestionRequestBuilder = client.prepareSuggest(serverCmd.index)
-				.addSuggestion(suggestionBuilder);
+	protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerCommand serverCmd) {
+		SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
+				SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
+		SearchRequestBuilder suggestionRequestBuilder = client.prepareSearch(serverCmd.index).suggest(suggestBuilder);
 
 		suggestBuilders.add(suggestionRequestBuilder);
 		if (log.isDebugEnabled())
 			log.debug("Suggesting on index {}. Created search query \"{}\".", serverCmd.index,
-					client.prepareSearch(serverCmd.index).addSuggestion(suggestionBuilder));
+					suggestBuilder.toString());
 	}
 
 	protected void handleSearchRequest(List<SearchRequestBuilder> searchRequestBuilders,
@@ -230,17 +213,17 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 		srb.setFetchSource(serverCmd.fetchSource);
 		// srb.setExplain(true);
-		
-		if (serverCmd.downloadCompleteResults);
-		srb.setScroll(TimeValue.timeValueMinutes(5));
 
+		if (serverCmd.downloadCompleteResults)
+			;
+		srb.setScroll(TimeValue.timeValueMinutes(5));
 
 		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
 		srb.setQuery(queryBuilder);
 
 		if (null != serverCmd.fieldsToReturn)
 			for (String field : serverCmd.fieldsToReturn) {
-				srb.addField(field);
+				srb.addStoredField(field);
 			}
 
 		srb.setFrom(serverCmd.start);
@@ -252,7 +235,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		if (null != serverCmd.aggregationCmds) {
 			for (AggregationCommand aggCmd : serverCmd.aggregationCmds.values()) {
 				log.debug("Adding top aggregation command {} to query.", aggCmd.name);
-				AbstractAggregationBuilder aggregationBuilder = buildAggregation(aggCmd);
+				AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
 				srb.addAggregation(aggregationBuilder);
 			}
 		}
@@ -262,12 +245,14 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			for (FacetCommand fc : serverCmd.facetCmds) {
 				if (fc.fields.size() == 0)
 					throw new IllegalArgumentException("FacetCommand without fields to facet on occurred.");
-				TermsBuilder fb = configureFacets(fc, FacetType.count);
+				TermsAggregationBuilder fb = configureFacets(fc, FacetType.count);
 				srb.addAggregation(fb);
 			}
 		}
 
 		if (null != serverCmd.hlCmds && serverCmd.hlCmds.size() > 0) {
+			HighlightBuilder hb = new HighlightBuilder();
+			srb.highlighter(hb);
 			for (int j = 0; j < serverCmd.hlCmds.size(); j++) {
 				HighlightCommand hlc = serverCmd.hlCmds.get(j);
 				for (HlField hlField : hlc.fields) {
@@ -295,7 +280,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 						field.preTags(hlField.pre);
 					if (null != hlField.post)
 						field.postTags(hlField.post);
-					srb.addHighlightedField(field);
+					hb.field(field);
 				}
 			}
 			// srb.setHighlighterPreTags(preTags.toArray(new
@@ -331,10 +316,11 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, srb.toString());
 	}
 
-	protected AbstractAggregationBuilder buildAggregation(AggregationCommand aggCmd) {
+	protected AbstractAggregationBuilder<?> buildAggregation(AggregationCommand aggCmd) {
 		if (TermsAggregation.class.equals(aggCmd.getClass())) {
 			TermsAggregation termsAgg = (TermsAggregation) aggCmd;
-			TermsBuilder termsBuilder = AggregationBuilders.terms(termsAgg.name).field(termsAgg.field);
+
+			TermsAggregationBuilder termsBuilder = AggregationBuilders.terms(termsAgg.name).field(termsAgg.field);
 			List<Terms.Order> compoundOrder = new ArrayList<>();
 			for (OrderCommand orderCmd : termsAgg.order) {
 				Terms.Order order = null;
@@ -375,16 +361,16 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		}
 		if (MaxAggregation.class.equals(aggCmd.getClass())) {
 			MaxAggregation maxAgg = (MaxAggregation) aggCmd;
-			MaxBuilder maxBuilder = AggregationBuilders.max(maxAgg.name);
+			MaxAggregationBuilder maxBuilder = AggregationBuilders.max(maxAgg.name);
 			if (null != maxAgg.field)
 				maxBuilder.field(maxAgg.field);
 			if (null != maxAgg.script)
-				maxBuilder.script(new Script(maxAgg.script, ScriptType.INLINE, SEMEDICO_DEFAULT_SCRIPT_LANG, null));
+				maxBuilder.script(new Script(ScriptType.INLINE, SEMEDICO_DEFAULT_SCRIPT_LANG, maxAgg.script, null));
 			return maxBuilder;
 		}
 		if (TopHitsAggregation.class.equals(aggCmd.getClass())) {
 			TopHitsAggregation topHitsAgg = (TopHitsAggregation) aggCmd;
-			TopHitsBuilder topHitsBuilder = AggregationBuilders.topHits(topHitsAgg.name);
+			TopHitsAggregationBuilder topHitsBuilder = AggregationBuilders.topHits(topHitsAgg.name);
 			String[] includes = null;
 			if (null != topHitsAgg.includeFields)
 				includes = topHitsAgg.includeFields.toArray(new String[topHitsAgg.includeFields.size()]);
@@ -392,14 +378,14 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (null != topHitsAgg.excludeFields)
 				excludes = topHitsAgg.excludeFields.toArray(new String[topHitsAgg.excludeFields.size()]);
 			if (null != includes || null != excludes)
-				topHitsBuilder.setFetchSource(includes, excludes);
+				topHitsBuilder.fetchSource(includes, excludes);
 			if (topHitsAgg.size != null)
-				topHitsBuilder.setSize(topHitsAgg.size);
+				topHitsBuilder.size(topHitsAgg.size);
 			return topHitsBuilder;
 		}
 		if (SignificantTermsAggregation.class.equals(aggCmd.getClass())) {
 			SignificantTermsAggregation sigAgg = (SignificantTermsAggregation) aggCmd;
-			SignificantTermsBuilder esSigAgg = AggregationBuilders.significantTerms(sigAgg.name);
+			SignificantTermsAggregationBuilder esSigAgg = AggregationBuilders.significantTerms(sigAgg.name);
 			esSigAgg.field(sigAgg.field);
 			return esSigAgg;
 		}
@@ -458,7 +444,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	}
 
 	private QueryBuilder buildMatchPhraseQuery(MatchPhraseQuery matchPhraseQuery) {
-		MatchQueryBuilder builder = QueryBuilders.matchPhraseQuery(matchPhraseQuery.field, matchPhraseQuery.phrase);
+		MatchPhraseQueryBuilder builder = QueryBuilders.matchPhraseQuery(matchPhraseQuery.field,
+				matchPhraseQuery.phrase);
 		builder.slop(matchPhraseQuery.slop);
 		if (matchPhraseQuery.boost != 1f)
 			builder.boost(matchPhraseQuery.boost);
@@ -495,20 +482,25 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		FunctionScoreQueryBuilder esFunctionScoreQuery = QueryBuilders.functionScoreQuery(esScoredQuery,
 				esFieldValueFactor);
 		esFunctionScoreQuery.boost(boost);
-		esFunctionScoreQuery.boostMode(boostMode.name());
+		esFunctionScoreQuery.boostMode(CombineFunction.fromString(boostMode.name()));
 
 		return esFunctionScoreQuery;
 	}
 
 	private QueryBuilder buildNestedQuery(NestedQuery nestedQuery) {
 		QueryBuilder esQuery = buildQuery(nestedQuery.query);
-		NestedQueryBuilder nestedEsQuery = QueryBuilders.nestedQuery(nestedQuery.path, esQuery);
+		NestedQueryBuilder nestedEsQuery = QueryBuilders.nestedQuery(nestedQuery.path, esQuery,
+				ScoreMode.valueOf(StringUtils.capitalize(nestedQuery.scoreMode.name())));
 		if (null != nestedQuery.innerHits) {
-			QueryInnerHitBuilder innerHitBuilder = new QueryInnerHitBuilder();
-			innerHitBuilder.setFetchSource(nestedQuery.innerHits.fetchSource);
-			for (String field : nestedQuery.innerHits.fields)
-				innerHitBuilder.field(field);
+			InnerHitBuilder innerHitBuilder = new InnerHitBuilder();
+			if (nestedQuery.innerHits.fetchSource)
+				innerHitBuilder.setFetchSourceContext(FetchSourceContext.FETCH_SOURCE);
+			else
+				innerHitBuilder.setFetchSourceContext(FetchSourceContext.DO_NOT_FETCH_SOURCE);
+			innerHitBuilder.setStoredFieldNames(nestedQuery.innerHits.fields);
 			if (nestedQuery.innerHits.highlight != null) {
+				HighlightBuilder hb = new HighlightBuilder();
+				innerHitBuilder.setHighlightBuilder(hb);
 				HighlightCommand innerHl = nestedQuery.innerHits.highlight;
 				for (HlField hlField : innerHl.fields) {
 					Field esHlField = new Field(hlField.field);
@@ -518,15 +510,14 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 						esHlField.preTags(hlField.pre);
 					if (null != hlField.post)
 						esHlField.postTags(hlField.post);
-					innerHitBuilder.addHighlightedField(esHlField);
+					hb.field(esHlField);
 				}
 			}
 			if (nestedQuery.innerHits.explain)
 				innerHitBuilder.setExplain(nestedQuery.innerHits.explain);
 			if (null != nestedQuery.innerHits.size)
 				innerHitBuilder.setSize(nestedQuery.innerHits.size);
-			nestedEsQuery.innerHit(innerHitBuilder);
-			nestedEsQuery.scoreMode(nestedQuery.scoreMode.name());
+			nestedEsQuery.innerHit(innerHitBuilder, true);
 		}
 		return nestedEsQuery;
 	}
@@ -559,11 +550,6 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 		if (null != luceneSyntaxQuery && null != luceneSyntaxQuery.analyzer)
 			queryStringQueryBuilder.analyzer(luceneSyntaxQuery.analyzer);
-		// If we want to search for events using wildcards, the parameter
-		// 'lowercaseExpandedTerms' has to be set
-		// to
-		// false or we won't get any results!!!
-		queryStringQueryBuilder.lowercaseExpandedTerms(false);
 		queryBuilder = queryStringQueryBuilder;
 		return queryBuilder;
 	}
@@ -644,15 +630,12 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		return termQueryBuilder;
 	}
 
-	private TermsBuilder configureFacets(FacetCommand fc, FacetType facetType) {
+	private TermsAggregationBuilder configureFacets(FacetCommand fc, FacetType facetType) {
 		if (fc.fields.size() > 1)
 			throw new IllegalArgumentException(
 					"The ElasticSearch component does not currently support multi-field facet counts.");
-		TermsBuilder tb = AggregationBuilders.terms(fc.name + facetType).field(fc.fields.get(0))
+		TermsAggregationBuilder tb = AggregationBuilders.terms(fc.name + facetType).field(fc.fields.get(0))
 				.size(fc.limit >= 0 ? fc.limit : Integer.MAX_VALUE);
-		// TermsFacetBuilder tfb = FacetBuilders.termsFacet(fc.name + facetType)
-		// .fields(fc.fields.toArray(new String[fc.fields.size()]))
-		// .size(fc.limit >= 0 ? fc.limit : Integer.MAX_VALUE);
 		// Term Sorting
 		if (null != fc.sort) {
 			Terms.Order order;
@@ -660,19 +643,15 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			switch (fc.sort) {
 			case COUNT:
 				order = Terms.Order.count(false);
-				// compType = ComparatorType.COUNT;
 				break;
 			case TERM:
 				order = Terms.Order.term(true);
-				// compType = ComparatorType.TERM;
 				break;
 			case REVERSE_COUNT:
 				order = Terms.Order.count(true);
-				// compType = ComparatorType.REVERSE_COUNT;
 				break;
 			case REVERSE_TERM:
 				order = Terms.Order.term(false);
-				// compType = ComparatorType.REVERSE_TERM;
 				break;
 			default:
 				throw new IllegalArgumentException("Unknown facet term sort order: " + fc.sort.name());
@@ -680,14 +659,34 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			tb.order(order);
 		}
 		// Which terms to count
+
 		if (null != fc.terms && fc.terms.size() > 0) {
-			Collection<String> enclosedTerms = Collections2.transform(fc.terms, encloseTermsFunction);
-			String includeTermRegexString = StringUtils.join(enclosedTerms, "|");
+			// private static final Function<String, String>
+			// encloseTermsFunction = new Function<String, String>() {
+			//
+			// @Override
+			// public String apply(String input) {
+			// StringBuilder sb = new StringBuilder();
+			// sb.append("(");
+			// sb.append(input);
+			// sb.append(")");
+			// return sb.toString();
+			// }
+			//
+			// };
+			// String includeTermRegexString = fc.terms.stream().map(t -> "(" +
+			// t + ")").collect(Collectors.joining("|"));
+			// Collection<String> enclosedTerms =
+			// Collections2.transform(fc.terms, encloseTermsFunction);
+			// String includeTermRegexString = StringUtils.join(enclosedTerms,
+			// "|");
 			if (!StringUtils.isEmpty(fc.filterExpression))
-				includeTermRegexString += "(" + fc.filterExpression + ")";
-			tb.include(includeTermRegexString);
+				throw new IllegalArgumentException("The fc.filterExpression is currently not supported");
+			// includeTermRegexString += "(" + fc.filterExpression + ")";
+			tb.includeExclude(new IncludeExclude(fc.terms.toArray(new String[fc.terms.size()]), null));
 		} else if (!StringUtils.isEmpty(fc.filterExpression)) {
-			tb.include(fc.filterExpression);
+			// tb.include(fc.filterExpression);
+			throw new IllegalArgumentException("The fc.filterExpression is currently not supported");
 		}
 		return tb;
 	}

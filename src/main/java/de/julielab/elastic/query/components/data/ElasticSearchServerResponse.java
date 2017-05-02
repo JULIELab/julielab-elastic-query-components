@@ -13,7 +13,6 @@ import java.util.stream.StreamSupport;
 
 import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.suggest.SuggestResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.common.unit.TimeValue;
@@ -27,7 +26,7 @@ import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.aggregations.metrics.max.Max;
 import org.elasticsearch.search.aggregations.metrics.tophits.TopHits;
-import org.elasticsearch.search.highlight.HighlightField;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 import org.elasticsearch.search.suggest.Suggest;
 import org.elasticsearch.search.suggest.Suggest.Suggestion;
 import org.elasticsearch.search.suggest.Suggest.Suggestion.Entry.Option;
@@ -54,7 +53,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	private SearchResponse response;
 	private List<FacetCommand> facetCmds;
 	private boolean searchServerNotReachable;
-	private SuggestResponse suggestResponse;
 	private boolean isSuggestionSearchResponse;
 	private Logger log;
 	private Suggest suggest;
@@ -71,11 +69,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		this.suggest = response.getSuggest();
 		if (null != response.getAggregations())
 			this.aggregationsByName = response.getAggregations().asMap();
-	}
-
-	public ElasticSearchServerResponse(SuggestResponse suggestResponse) {
-		this.suggestResponse = suggestResponse;
-		this.suggest = this.suggestResponse.getSuggest();
 	}
 
 	public ElasticSearchServerResponse(Logger log) {
@@ -449,7 +442,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		for (final org.elasticsearch.search.suggest.Suggest.Suggestion.Entry<? extends Option> entry : entries) {
 			for (final Option option : entry.getOptions()) {
 				CompletionSuggestion.Entry.Option completionOption = (CompletionSuggestion.Entry.Option) option;
-				final Map<String, Object> payload = completionOption.getPayloadAsMap();
 				ISearchServerDocument document = new ISearchServerDocument() {
 
 					@Override
@@ -474,10 +466,9 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 						return Optional.ofNullable((V) getFieldValue(fieldName).get());
 					}
 
-					@SuppressWarnings("unchecked")
 					@Override
 					public <V> Optional<V> getFieldPayload(String fieldName) {
-						return Optional.ofNullable((V) payload.get(fieldName));
+						return completionOption.getHit().field(fieldName).getValue();
 					}
 
 					@Override

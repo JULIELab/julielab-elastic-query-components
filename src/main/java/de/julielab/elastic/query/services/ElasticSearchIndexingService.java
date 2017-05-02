@@ -6,14 +6,13 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import org.elasticsearch.action.ActionFuture;
-import org.elasticsearch.action.ListenableActionFuture;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.action.deletebyquery.DeleteByQueryAction;
-import org.elasticsearch.action.deletebyquery.DeleteByQueryResponse;
+import org.elasticsearch.action.bulk.byscroll.BulkByScrollResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.reindex.DeleteByQueryAction;
 import org.slf4j.Logger;
 
 public class ElasticSearchIndexingService implements IIndexingService {
@@ -23,8 +22,7 @@ public class ElasticSearchIndexingService implements IIndexingService {
 
 	public ElasticSearchIndexingService(Logger log, ISearchClientProvider searchServerProvider) {
 		this.log = log;
-		ElasticSearchClient semedicoSearchClient = (ElasticSearchClient) searchServerProvider
-				.getSearchClient();
+		ElasticSearchClient semedicoSearchClient = (ElasticSearchClient) searchServerProvider.getSearchClient();
 		client = semedicoSearchClient.getClient();
 	}
 
@@ -77,18 +75,11 @@ public class ElasticSearchIndexingService implements IIndexingService {
 
 	@Override
 	public void clearIndex(String index) {
-		// for this method to work, the DeleteByQuery plugin must be installed
-		// to ES and the client must have added DeleteByQueryPlugin.class by 'addPlugin'
 		log.info("Clearing index {}", index);
-		DeleteByQueryAction deleteAction = DeleteByQueryAction.INSTANCE;
-		ListenableActionFuture<DeleteByQueryResponse> future = deleteAction.newRequestBuilder(client)
-				.setQuery(QueryBuilders.matchAllQuery()).setIndices(index).execute();
-		try {
-			DeleteByQueryResponse response = future.get();
-			log.info("Deleting by all query deleted {} documents.", response.getTotalDeleted());
-		} catch (InterruptedException | ExecutionException e) {
-			e.printStackTrace();
-		}
+		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
+				.filter(QueryBuilders.matchAllQuery()).source(index).get();
+
+		log.info("Deleting by all query deleted {} documents.", response.getDeleted());
 
 	}
 

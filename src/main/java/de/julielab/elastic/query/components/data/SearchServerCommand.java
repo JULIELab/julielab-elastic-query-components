@@ -23,8 +23,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.google.common.collect.Multimap;
-
 import de.julielab.elastic.query.components.data.SortCommand.SortOrder;
 import de.julielab.elastic.query.components.data.aggregation.AggregationCommand;
 import de.julielab.elastic.query.components.data.query.SearchServerQuery;
@@ -56,7 +54,7 @@ public class SearchServerCommand {
 	 * For some suggester types, e.g. completion suggester: The suggestion
 	 * categories.
 	 */
-	public Multimap<String, String> suggestionCategories;
+	public Map<String, List<String>> suggestionCategories;
 	public int start;
 	/**
 	 * The value Integer.MIN_VALUE means "not set".

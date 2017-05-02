@@ -15,7 +15,7 @@ public class MaxAggregation extends AggregationCommand {
 	 */
 	public String field;
 	/**
-	 * A script to computer and return the maximum value.
+	 * A script to compute and return the maximum value.
 	 * 
 	 * @see http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/modules-scripting.html
 	 */
