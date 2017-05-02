@@ -73,7 +73,6 @@ public class SearchServerCommand {
 	 */
 	public boolean fetchSource;
 
-	public List<FacetCommand> facetCmds;
 	public Map<String, AggregationCommand> aggregationCmds;
 	public List<HighlightCommand> hlCmds;
 	// TODO should go into semedico as this is not general enough
@@ -107,15 +106,6 @@ public class SearchServerCommand {
 		if (null == fieldsToReturn)
 			fieldsToReturn = new ArrayList<String>();
 		fieldsToReturn.add(field);
-	}
-
-	/**
-	 * @param fc
-	 */
-	public void addFacetCommand(FacetCommand fc) {
-		if (null == facetCmds)
-			facetCmds = new ArrayList<FacetCommand>();
-		facetCmds.add(fc);
 	}
 
 	/**

@@ -1,7 +1,6 @@
 package de.julielab.elastic.query.components.data;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -20,7 +19,6 @@ import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregation;
-import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.bucket.significant.SignificantTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
@@ -46,12 +44,10 @@ import de.julielab.elastic.query.components.data.aggregation.TermsAggregationUni
 import de.julielab.elastic.query.components.data.aggregation.TopHitsAggregation;
 import de.julielab.elastic.query.components.data.aggregation.TopHitsAggregationResult;
 import de.julielab.elastic.query.services.ISearchServerResponse;
-import de.julielab.elastic.query.util.TermCountCursor;
 
 public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 	private SearchResponse response;
-	private List<FacetCommand> facetCmds;
 	private boolean searchServerNotReachable;
 	private boolean isSuggestionSearchResponse;
 	private Logger log;
@@ -60,19 +56,19 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	private QueryError queryError;
 	private Client client;
 
-	public ElasticSearchServerResponse(Logger log, SearchResponse response, List<FacetCommand> facetCmds,
-			Client client) {
+	public ElasticSearchServerResponse(Logger log, SearchResponse response, Client client) {
 		this.log = log;
 		this.response = response;
-		this.facetCmds = facetCmds;
 		this.client = client;
-		this.suggest = response.getSuggest();
-		if (null != response.getAggregations())
-			this.aggregationsByName = response.getAggregations().asMap();
+		if (response != null) {
+			this.suggest = response.getSuggest();
+			if (null != response.getAggregations())
+				this.aggregationsByName = response.getAggregations().asMap();
+		}
 	}
 
 	public ElasticSearchServerResponse(Logger log) {
-		this(log, null, null, null);
+		this(log, null, null);
 	}
 
 	public IAggregationResult getAggregationResult(AggregationCommand aggCmd) {
@@ -195,30 +191,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	}
 
 	@Override
-	public List<IFacetField> getFacetFields() {
-		List<IFacetField> facetFields = Collections.emptyList();
-		Aggregations aggregations = response.getAggregations();
-		if (null == aggregations && !searchServerNotReachable)
-			throw new IllegalStateException(
-					"ElasticSearch did not return any facet counts, but they were demanded by the application.");
-		if (null != aggregations) {
-			// a map from the name of an aggregation to the aggregation itself
-			Map<String, Aggregation> aggMap = aggregations.getAsMap();
-			// List<Facet> facets = esFacets.facets();
-			facetFields = new ArrayList<>(aggMap.size());
-			for (FacetCommand fc : facetCmds) {
-				String facetName = fc.name;
-				if (StringUtils.isBlank(facetName) || facetName.startsWith("null")) {
-					throw new IllegalArgumentException("The facet command \"" + fc
-							+ "\" has no name. Thus, it is not clear how this facet command is referenced in the ElasticSearch response (logical facet name).");
-				}
-				facetFields.add(new ElasticSearchConversionFacetField(facetName, aggMap));
-			}
-		}
-		return facetFields;
-	}
-
-	@Override
 	public Stream<ISearchServerDocument> getDocumentResults() {
 		if (searchServerNotReachable) {
 			log.debug("Not returning any document results because the server was not reachable.");
@@ -289,31 +261,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	}
 
 	@Override
-	public Map<String, Map<String, List<String>>> getHighlighting() {
-		SearchHits hits = response.getHits();
-		Map<String, Map<String, List<String>>> highlighting = new HashMap<>(hits.hits().length);
-
-		for (SearchHit hit : hits) {
-			String docId = hit.getId();
-			Map<String, HighlightField> esHLs = hit.getHighlightFields();
-			Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
-
-			for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
-				String fieldName = esFieldHLs.getKey();
-				HighlightField hf = esFieldHLs.getValue();
-
-				List<String> hLFragments = new ArrayList<>(hf.fragments().length);
-				for (Text esHLFragments : hf.getFragments())
-					hLFragments.add(esHLFragments.string());
-				fieldHLs.put(fieldName, hLFragments);
-			}
-
-			highlighting.put(docId, fieldHLs);
-		}
-		return highlighting;
-	}
-
-	@Override
 	public long getNumFound() {
 		if (searchServerNotReachable)
 			return 0;
@@ -337,102 +284,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		return 0;
 	}
 
-	/**
-	 * This class takes all aggregations (all facets that were requested) and
-	 * just pulls the one with the correct name (see constructor arguments) out
-	 * of those. This is then the actual "facet field".
-	 * 
-	 * @author faessler
-	 * 
-	 */
-	private class ElasticSearchConversionFacetField implements IFacetField {
-
-		private final String name;
-		private Map<String, Aggregation> aggMap;
-
-		public ElasticSearchConversionFacetField(String name, Map<String, Aggregation> aggMap) {
-			this.name = name;
-			this.aggMap = aggMap;
-		}
-
-		@Override
-		public TermCountCursor getFacetValues() {
-			final Map<FacetType, Terms> facetMap = new HashMap<>();
-			for (String aggName : aggMap.keySet()) {
-				try {
-					if (aggName.startsWith(name)) {
-						String typeString = aggName.substring(name.length());
-						FacetType type = FacetType.valueOf(typeString);
-						facetMap.put(type, (Terms) aggMap.get(aggName));
-					}
-				} catch (IllegalArgumentException e) {
-					// Do nothing, this can happen because our facet names are
-					// not prefix-free. E.g. "facetTermsfid1"
-					// will
-					// hit when the actual field name is "facetTermsfid13count"
-					// and we will get an error because the
-					// enum constant '3count' does not exist.
-				}
-			}
-			// We just need a facet to give us the term names. All facets have
-			// the
-			// same names in the same order (everything else would be an error),
-			// only their counts are different according to their FacetType
-			// (count
-			// vs. document frequency for example).
-			final Terms referenceFacet = facetMap.values().iterator().next();
-
-			return new TermCountCursor() {
-
-				private long numElements = referenceFacet.getBuckets().size();
-				private int pos = -1;
-
-				@Override
-				public boolean forwardCursor() {
-					pos++;
-					return isValid();
-				}
-
-				@Override
-				public String getName() {
-					if (isValid())
-						return (String) referenceFacet.getBuckets().get(pos).getKey();
-					return null;
-				}
-
-				@Override
-				public Number getFacetCount(FacetType type) {
-					if (isValid())
-						return referenceFacet.getBuckets().get(pos).getDocCount();
-					return null;
-					// TermsFacet tf = facetMap.get(type);
-					// return tf.getEntries().get(pos).getCount();
-				}
-
-				@Override
-				public long size() {
-					return numElements;
-				}
-
-				@Override
-				public boolean isValid() {
-					return pos > -1 && pos < numElements;
-				}
-
-				@Override
-				public void reset() {
-					pos = -1;
-				}
-
-			};
-		}
-
-		@Override
-		public String getName() {
-			return name;
-		}
-
-	}
 
 	@Override
 	public List<ISearchServerDocument> getSuggestionResults() {

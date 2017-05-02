@@ -42,7 +42,6 @@ import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
-import org.elasticsearch.search.aggregations.bucket.terms.support.IncludeExclude;
 import org.elasticsearch.search.aggregations.metrics.max.MaxAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
@@ -51,14 +50,11 @@ import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder.Field;
 import org.elasticsearch.search.sort.SortOrder;
 import org.elasticsearch.search.suggest.SuggestBuilder;
 import org.elasticsearch.search.suggest.SuggestBuilders;
-import org.elasticsearch.search.suggest.completion.CompletionSuggestionBuilder;
 import org.slf4j.Logger;
 
 import de.julielab.elastic.query.components.data.ElasticSearchServerResponse;
-import de.julielab.elastic.query.components.data.FacetCommand;
 import de.julielab.elastic.query.components.data.HighlightCommand;
 import de.julielab.elastic.query.components.data.HighlightCommand.HlField;
-import de.julielab.elastic.query.components.data.IFacetField.FacetType;
 import de.julielab.elastic.query.components.data.QueryError;
 import de.julielab.elastic.query.components.data.SearchCarrier;
 import de.julielab.elastic.query.components.data.SearchServerCommand;
@@ -150,12 +146,11 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 				Item[] responses = multiSearchResponse.getResponses();
 				for (int i = 0; i < responses.length; i++) {
 					Item item = responses[i];
-					List<FacetCommand> facetCmds = serverCmds.get(i).facetCmds;
 					SearchResponse response = item.getResponse();
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, facetCmds,
+					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response,
 							client);
 					searchCarrier.addSearchServerResponse(serverRsp);
 
@@ -167,7 +162,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (!suggestionBuilders.isEmpty()) {
 				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
 					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-					searchCarrier.addSearchServerResponse(new ElasticSearchServerResponse(log, suggestResponse, null, client));
+					searchCarrier.addSearchServerResponse(
+							new ElasticSearchServerResponse(log, suggestResponse, client));
 				}
 			}
 			w.stop();
@@ -237,16 +233,6 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 				log.debug("Adding top aggregation command {} to query.", aggCmd.name);
 				AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
 				srb.addAggregation(aggregationBuilder);
-			}
-		}
-
-		log.debug("Number of facet commands: {}", serverCmd.facetCmds != null ? serverCmd.facetCmds.size() : 0);
-		if (null != serverCmd.facetCmds) {
-			for (FacetCommand fc : serverCmd.facetCmds) {
-				if (fc.fields.size() == 0)
-					throw new IllegalArgumentException("FacetCommand without fields to facet on occurred.");
-				TermsAggregationBuilder fb = configureFacets(fc, FacetType.count);
-				srb.addAggregation(fb);
 			}
 		}
 
@@ -629,66 +615,4 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		TermQueryBuilder termQueryBuilder = new TermQueryBuilder(query.field, query.term);
 		return termQueryBuilder;
 	}
-
-	private TermsAggregationBuilder configureFacets(FacetCommand fc, FacetType facetType) {
-		if (fc.fields.size() > 1)
-			throw new IllegalArgumentException(
-					"The ElasticSearch component does not currently support multi-field facet counts.");
-		TermsAggregationBuilder tb = AggregationBuilders.terms(fc.name + facetType).field(fc.fields.get(0))
-				.size(fc.limit >= 0 ? fc.limit : Integer.MAX_VALUE);
-		// Term Sorting
-		if (null != fc.sort) {
-			Terms.Order order;
-			// ComparatorType compType;
-			switch (fc.sort) {
-			case COUNT:
-				order = Terms.Order.count(false);
-				break;
-			case TERM:
-				order = Terms.Order.term(true);
-				break;
-			case REVERSE_COUNT:
-				order = Terms.Order.count(true);
-				break;
-			case REVERSE_TERM:
-				order = Terms.Order.term(false);
-				break;
-			default:
-				throw new IllegalArgumentException("Unknown facet term sort order: " + fc.sort.name());
-			}
-			tb.order(order);
-		}
-		// Which terms to count
-
-		if (null != fc.terms && fc.terms.size() > 0) {
-			// private static final Function<String, String>
-			// encloseTermsFunction = new Function<String, String>() {
-			//
-			// @Override
-			// public String apply(String input) {
-			// StringBuilder sb = new StringBuilder();
-			// sb.append("(");
-			// sb.append(input);
-			// sb.append(")");
-			// return sb.toString();
-			// }
-			//
-			// };
-			// String includeTermRegexString = fc.terms.stream().map(t -> "(" +
-			// t + ")").collect(Collectors.joining("|"));
-			// Collection<String> enclosedTerms =
-			// Collections2.transform(fc.terms, encloseTermsFunction);
-			// String includeTermRegexString = StringUtils.join(enclosedTerms,
-			// "|");
-			if (!StringUtils.isEmpty(fc.filterExpression))
-				throw new IllegalArgumentException("The fc.filterExpression is currently not supported");
-			// includeTermRegexString += "(" + fc.filterExpression + ")";
-			tb.includeExclude(new IncludeExclude(fc.terms.toArray(new String[fc.terms.size()]), null));
-		} else if (!StringUtils.isEmpty(fc.filterExpression)) {
-			// tb.include(fc.filterExpression);
-			throw new IllegalArgumentException("The fc.filterExpression is currently not supported");
-		}
-		return tb;
-	}
-
 }
