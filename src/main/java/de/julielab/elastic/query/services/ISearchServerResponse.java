@@ -34,5 +34,7 @@ public interface ISearchServerResponse {
 	void setSuggestionSearchResponse(boolean isSuggestionSearchResponse);
 	
 	QueryError getQueryError();
+	
+	String getQueryErrorMessage();
 
 }

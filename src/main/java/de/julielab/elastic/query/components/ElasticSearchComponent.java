@@ -156,6 +156,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					if (null == response) {
 						serverRsp.setQueryError(QueryError.NO_RESPONSE);
+						serverRsp.setQueryErrorMessage(item.getFailureMessage());
 					}
 				}
 			}

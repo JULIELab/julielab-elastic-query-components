@@ -55,6 +55,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	private Map<String, Aggregation> aggregationsByName;
 	private QueryError queryError;
 	private Client client;
+	private String queryErrorMessage;
 
 	public ElasticSearchServerResponse(Logger log, SearchResponse response, Client client) {
 		this.log = log;
@@ -353,4 +354,14 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	public QueryError getQueryError() {
 		return queryError;
 	}
+
+	public void setQueryErrorMessage(String queryErrorMessage) {
+		this.queryErrorMessage = queryErrorMessage;
+	}
+
+	public String getQueryErrorMessage() {
+		return queryErrorMessage;
+	}
+	
+	
 }

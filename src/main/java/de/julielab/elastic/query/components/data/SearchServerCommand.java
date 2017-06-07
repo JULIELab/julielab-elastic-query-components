@@ -19,6 +19,7 @@
 package de.julielab.elastic.query.components.data;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,7 +94,7 @@ public class SearchServerCommand {
 	 */
 	public Map<String, SearchServerQuery> namedQueries;
 	public SearchServerQuery postFilterQuery;
-	public List<String> indexTypes;
+	public Collection<String> indexTypes;
 	/**
 	 * Causes the return of all results of the query, not only a page or a
 	 * batch. May require additional requests to the server which are
