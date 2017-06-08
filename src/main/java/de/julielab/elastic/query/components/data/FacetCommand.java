@@ -21,7 +21,7 @@ package de.julielab.elastic.query.components.data;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-
+@Deprecated
 public class FacetCommand {
 	public List<String> fields = new ArrayList<String>();
 	public int mincount = Integer.MIN_VALUE;

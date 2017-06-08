@@ -1,11 +1,17 @@
 package de.julielab.elastic.query.components;
 
+import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
+import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.search.MultiSearchRequestBuilder;
 import org.elasticsearch.action.search.MultiSearchResponse;
 import org.elasticsearch.action.search.MultiSearchResponse.Item;
@@ -42,6 +48,7 @@ import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.aggregations.bucket.terms.support.IncludeExclude;
 import org.elasticsearch.search.aggregations.metrics.max.MaxAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
@@ -150,8 +157,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response,
-							client);
+					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, client);
 					searchCarrier.addSearchServerResponse(serverRsp);
 
 					if (null == response) {
@@ -163,8 +169,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (!suggestionBuilders.isEmpty()) {
 				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
 					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-					searchCarrier.addSearchServerResponse(
-							new ElasticSearchServerResponse(log, suggestResponse, client));
+					searchCarrier
+							.addSearchServerResponse(new ElasticSearchServerResponse(log, suggestResponse, client));
 				}
 			}
 			w.stop();
@@ -337,6 +343,54 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 				termsBuilder.order(Terms.Order.compound(compoundOrder));
 			if (null != termsAgg.size)
 				termsBuilder.size(termsAgg.size);
+
+			{
+				// manage the in- or exclusion of terms into the aggregation
+				String includeRegex = null;
+				String excludeRegex = null;
+				SortedSet<BytesRef> includeTerms = null;
+				SortedSet<BytesRef> excludeTerms = null;
+				if (termsAgg.include != null) {
+					if (termsAgg.include instanceof String) {
+						includeRegex = (String) termsAgg.include;
+					} else if (termsAgg.include.getClass().isArray()) {
+						includeTerms = new TreeSet<>();
+						for (int i = 0; i < Array.getLength(termsAgg.include); ++i) {
+							includeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.include, i))));
+						}
+					} else {
+						includeTerms = new TreeSet<>();
+						for (Iterator<?> it = ((Collection<?>) termsAgg.include).iterator(); it.hasNext();) {
+							includeTerms.add(new BytesRef(String.valueOf(it.next())));
+						}
+					}
+				}
+				if (termsAgg.exclude != null) {
+					if (termsAgg.exclude instanceof String) {
+						excludeRegex = (String) termsAgg.exclude;
+					} else if (termsAgg.exclude.getClass().isArray()) {
+						excludeTerms = new TreeSet<>();
+						for (int i = 0; i < Array.getLength(termsAgg.exclude); ++i) {
+							excludeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.exclude, i))));
+						}
+					} else {
+						excludeTerms = new TreeSet<>();
+						for (Iterator<?> it = ((Collection<?>) termsAgg.exclude).iterator(); it.hasNext();) {
+							excludeTerms.add(new BytesRef(String.valueOf(it.next())));
+						}
+					}
+				}
+				IncludeExclude includeExclude = null;
+				if (includeRegex != null || excludeRegex != null)
+					includeExclude = new IncludeExclude(includeRegex, excludeRegex);
+				else if ((includeTerms != null && !includeTerms.isEmpty())
+						|| (excludeTerms != null && !excludeTerms.isEmpty()))
+					includeExclude = new IncludeExclude(includeTerms, excludeTerms);
+
+				if (includeExclude != null)
+					termsBuilder.includeExclude(includeExclude);
+				// End inclusion / exclusion of aggregation terms
+			}
 
 			// Add sub aggregations
 			if (null != termsAgg.subaggregations) {

@@ -9,6 +9,7 @@ import de.julielab.elastic.query.util.TermCountCursor;
  * @author faessler
  * 
  */
+@Deprecated
 public interface IFacetField {
 	/**
 	 * This enumeration serves for the keys for possible facet types. For
