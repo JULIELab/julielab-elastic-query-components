@@ -82,6 +82,14 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 		return buildAggregationResult(aggCmd, aggregation);
 	}
+	
+	public boolean hasAggregationResults() {
+		return aggregationsByName != null && !aggregationsByName.isEmpty();
+	}
+	
+	public boolean hasAggregation(String name) {
+		return aggregationsByName != null && aggregationsByName.containsKey(name);
+	}
 
 	private IAggregationResult buildAggregationResult(AggregationCommand aggCmd, Aggregation aggregation) {
 		if (TermsAggregation.class.equals(aggCmd.getClass())) {
@@ -285,7 +293,6 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		return 0;
 	}
 
-
 	@Override
 	public List<ISearchServerDocument> getSuggestionResults() {
 		List<ISearchServerDocument> documents = new ArrayList<>();
@@ -362,6 +369,5 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	public String getQueryErrorMessage() {
 		return queryErrorMessage;
 	}
-	
-	
+
 }
