@@ -99,11 +99,10 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	private static final int DEFAULT_NUMBER_FRAGS = 5;
 
 	private static final String SEMEDICO_DEFAULT_SCRIPT_LANG = "groovy";
-	private Logger log;
 	private Client client;
 
 	public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
-		this.log = log;
+		super(log);
 		client = searchClientProvider.getSearchClient().getClient();
 	}
 

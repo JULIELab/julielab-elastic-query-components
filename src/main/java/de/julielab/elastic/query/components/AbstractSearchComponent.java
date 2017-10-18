@@ -1,5 +1,12 @@
 package de.julielab.elastic.query.components;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.function.BiFunction;
+
+import org.slf4j.Logger;
+
 import de.julielab.elastic.query.components.data.SearchCarrier;
 
 /**
@@ -12,7 +19,81 @@ import de.julielab.elastic.query.components.data.SearchCarrier;
  */
 public abstract class AbstractSearchComponent implements ISearchComponent {
 
-	
+	private BiFunction<Object, String, String> notNull = (o, m) -> o == null ? m + " is null." : null;
+	private BiFunction<Collection<?>, String, String> notEmpty = (o, m) -> o.isEmpty() ? m + " is empty." : null;
+	protected Logger log;
+
+	public AbstractSearchComponent(Logger log) {
+		this.log = log;
+	}
+
+	/**
+	 * Error messages for state checks.
+	 */
+	private List<String> errorMessages = new ArrayList<>();
+
+	/**
+	 * Checks for null objects and, if found, generates an error message. For
+	 * this purpose, the odd-indexed elements must be strings giving a name to
+	 * the previous object.
+	 * 
+	 * @param objects
+	 *            A list of pair where the even-indexed elements are objects for
+	 *            the null check and odd-indexed elements are their names.
+	 */
+	protected void checkNotNull(Object... objects) {
+		if (objects.length % 2 == 1)
+			throw new IllegalArgumentException(
+					"An even number of arguments is required. The even elements are the objects to test for null, the odd arguments are their names.");
+		for (int i = 0; i < objects.length; i++) {
+			Object object = objects[i];
+			if (i % 2 == 1) {
+				if (!(object instanceof CharSequence))
+					throw new IllegalArgumentException(
+							"All odd arguments must be names describing the previous object but was of class "
+									+ object.getClass().getCanonicalName() + ".");
+				String returnMessage = notNull.apply(objects[i - 1], (String) object);
+				if (returnMessage != null)
+					errorMessages.add(returnMessage);
+			}
+		}
+	}
+
+	/**
+	 * Checks for empty collections and, if found, generates an error message.
+	 * For this purpose, the odd-indexed elements must be strings giving a name
+	 * to the previous object.
+	 * 
+	 * @param objects
+	 *            A list of pair where the even-indexed elements are collections
+	 *            for the empty check and odd-indexed elements are their names.
+	 */
+	protected void checkNotEmpty(Collection<?>... objects) {
+		if (objects.length % 2 == 1)
+			throw new IllegalArgumentException(
+					"An even number of arguments is required. The even elements are the objects to test for null, the odd arguments are their names.");
+		for (int i = 0; i < objects.length; i++) {
+			Object object = objects[i];
+			if (i % 2 == 1) {
+				if (!(object instanceof CharSequence))
+					throw new IllegalArgumentException(
+							"All odd arguments must be names describing the previous object but was of class "
+									+ object.getClass().getCanonicalName() + ".");
+				String returnMessage = notEmpty.apply(objects[i - 1], (String) object);
+				if (returnMessage != null)
+					errorMessages.add(returnMessage);
+			}
+		}
+	}
+
+	protected void stopIfError() {
+		if (errorMessages.isEmpty())
+			return;
+		errorMessages.forEach(System.out::println);
+		throw new IllegalArgumentException("There was at least one failed precondition check for the component "
+				+ getClass().getSimpleName() + ". Check the logs above.");
+	}
+
 	/**
 	 * Method to call when actually running the component. Registers this
 	 * component in the <tt>searchCarrier</tt> and then calls
@@ -20,9 +101,16 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	 */
 	@Override
 	public boolean process(SearchCarrier searchCarrier) {
+		errorMessages.clear();
 		searchCarrier.enteredComponents.add(getClass().getSimpleName());
-		// TODO catch exceptions, output the chain state
-		return processSearch(searchCarrier);
+		try {
+			return processSearch(searchCarrier);
+		} catch (Exception e) {
+			log.error(
+					"An exception has occurred in component {}. The visited sequence of components until this point was: {}",
+					getClass().getSimpleName(), searchCarrier.enteredComponents);
+			throw e;
+		}
 	}
 
 	/**
