@@ -3,7 +3,7 @@ package de.julielab.elastic.query.components.data.aggregation;
 import java.util.ArrayList;
 import java.util.List;
 
-import de.julielab.elastic.query.components.data.SearchServerCommand;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
 
 /**
  * This aggregation collects the top document hits in its scope. This scope is given by the level of sub-aggregation
@@ -17,10 +17,10 @@ import de.julielab.elastic.query.components.data.SearchServerCommand;
  * @author faessler
  * 
  */
-public class TopHitsAggregation extends AggregationCommand {
+public class TopHitsAggregation extends AggregationRequest {
 	/**
 	 * <p>
-	 * The fields for which values are to be returned. This is similar to the {@link SearchServerCommand#fieldsToReturn}
+	 * The fields for which values are to be returned. This is similar to the {@link SearchServerRequest#fieldsToReturn}
 	 * parameter. The asterisk wildcard can be used to specify multiple or even all fields.
 	 * </p>
 	 * <p>
@@ -38,7 +38,7 @@ public class TopHitsAggregation extends AggregationCommand {
 	 */
 	public List<String> excludeFields;
 	/**
-	 * For number of documents to return. This is similar to the {@link SearchServerCommand#rows} parameter.
+	 * For number of documents to return. This is similar to the {@link SearchServerRequest#rows} parameter.
 	 */
 	public Integer size;
 

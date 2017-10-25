@@ -25,14 +25,14 @@ import java.util.List;
 import java.util.Map;
 
 import de.julielab.elastic.query.components.data.SortCommand.SortOrder;
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.query.SearchServerQuery;
 
 /**
  * @author faessler
  * 
  */
-public class SearchServerCommand {
+public class SearchServerRequest {
 
 	/**
 	 * A structured search server query. The actual query instance is a subclass
@@ -66,7 +66,7 @@ public class SearchServerCommand {
 	 * work for stored fields, of course. A null value (default) causes all
 	 * fields to be returned. To return no fields, set an empty list.
 	 */
-	public List<String> fieldsToReturn;
+	public Collection<String> fieldsToReturn;
 	/**
 	 * For multi-field queries, provided the fields that should be queried on
 	 * using {@link #serverQuery}. The <tt>*</tt> wildcard is allowed for the
@@ -74,7 +74,7 @@ public class SearchServerCommand {
 	 */
 	public boolean fetchSource;
 
-	public Map<String, AggregationCommand> aggregationCmds;
+	public Map<String, AggregationRequest> aggregationRequests;
 	public List<HighlightCommand> hlCmds;
 	// TODO should go into semedico as this is not general enough
 	public boolean filterReviews;
@@ -125,9 +125,9 @@ public class SearchServerCommand {
 		sortCmds.add(new SortCommand(field, order));
 	}
 
-	public void addAggregationCommand(AggregationCommand aggCmd) {
-		if (null == aggregationCmds)
-			aggregationCmds = new HashMap<>();
-		aggregationCmds.put(aggCmd.name, aggCmd);
+	public void addAggregationCommand(AggregationRequest aggCmd) {
+		if (null == aggregationRequests)
+			aggregationRequests = new HashMap<>();
+		aggregationRequests.put(aggCmd.name, aggCmd);
 	}
 }

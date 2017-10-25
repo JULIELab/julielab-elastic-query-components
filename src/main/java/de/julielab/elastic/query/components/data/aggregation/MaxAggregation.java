@@ -1,5 +1,7 @@
 package de.julielab.elastic.query.components.data.aggregation;
 
+import de.julielab.elastic.query.ScriptLang;
+
 /**
  * This aggregation returns the maximum value of the specified field across documents matched by the main query.
  * 
@@ -9,7 +11,7 @@ package de.julielab.elastic.query.components.data.aggregation;
  * @author faessler
  * 
  */
-public class MaxAggregation extends AggregationCommand {
+public class MaxAggregation extends AggregationRequest {
 	/**
 	 * The field to compute and return the maximum value for.
 	 */
@@ -20,4 +22,5 @@ public class MaxAggregation extends AggregationCommand {
 	 * @see http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/modules-scripting.html
 	 */
 	public String script;
+	public ScriptLang scriptLang = ScriptLang.painless;
 }

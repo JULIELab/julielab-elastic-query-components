@@ -13,7 +13,7 @@ import java.util.List;
  * @author faessler
  * 
  */
-public class TermsAggregation extends AggregationCommand {
+public class TermsAggregation extends AggregationRequest {
 	/**
 	 * The field from which to retrieve terms to aggregate over.
 	 */

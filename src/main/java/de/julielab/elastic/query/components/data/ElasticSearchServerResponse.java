@@ -31,7 +31,7 @@ import org.elasticsearch.search.suggest.Suggest.Suggestion.Entry.Option;
 import org.elasticsearch.search.suggest.completion.CompletionSuggestion;
 import org.slf4j.Logger;
 
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.aggregation.IAggregationResult;
 import de.julielab.elastic.query.components.data.aggregation.MaxAggregation;
 import de.julielab.elastic.query.components.data.aggregation.MaxAggregationResult;
@@ -72,7 +72,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		this(log, null, null);
 	}
 
-	public IAggregationResult getAggregationResult(AggregationCommand aggCmd) {
+	public IAggregationResult getAggregationResult(AggregationRequest aggCmd) {
 		String aggName = aggCmd.name;
 		if (null == aggregationsByName || null == aggregationsByName.get(aggName)) {
 			log.warn("No aggregation result with name \"{}\" was found in ElasticSearch's response.", aggName);
@@ -91,7 +91,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		return aggregationsByName != null && aggregationsByName.containsKey(name);
 	}
 
-	private IAggregationResult buildAggregationResult(AggregationCommand aggCmd, Aggregation aggregation) {
+	private IAggregationResult buildAggregationResult(AggregationRequest aggCmd, Aggregation aggregation) {
 		if (TermsAggregation.class.equals(aggCmd.getClass())) {
 			log.trace("Building {}", TermsAggregationResult.class.getSimpleName());
 			TermsAggregation semedicoTermsAggregation = (TermsAggregation) aggCmd;
@@ -108,7 +108,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 				for (Aggregation esSubAgg : bucket.getAggregations()) {
 					String esSubAggName = esSubAgg.getName();
-					AggregationCommand subAggCmd = semedicoTermsAggregation.getSubaggregation(esSubAggName);
+					AggregationRequest subAggCmd = semedicoTermsAggregation.getSubaggregation(esSubAggName);
 					termsAggUnit.addSubaggregationResult(buildAggregationResult(subAggCmd, esSubAgg));
 				}
 				termsAggResult.addAggregationUnit(termsAggUnit);
@@ -370,4 +370,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		return queryErrorMessage;
 	}
 
+	public boolean hasQueryError() {
+		return this.queryError != null;
+	}
+	
 }

@@ -1,6 +1,7 @@
 package de.julielab.elastic.query.components.data.aggregation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class TermsAggregationResult implements ITermsAggregationResult {
@@ -19,7 +20,7 @@ public class TermsAggregationResult implements ITermsAggregationResult {
 
 	@Override
 	public List<ITermsAggregationUnit> getAggregationUnits() {
-		return aggregationUnits;
+		return aggregationUnits != null ? aggregationUnits : Collections.emptyList();
 	}
 
 	public void addAggregationUnit(ITermsAggregationUnit unit) {

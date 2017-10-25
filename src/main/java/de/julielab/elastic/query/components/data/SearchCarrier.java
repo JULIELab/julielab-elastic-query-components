@@ -33,13 +33,8 @@ import de.julielab.elastic.query.services.ISearchServerResponse;
 public class SearchCarrier {
 	
 	
-//	public QueryAnalysisCommand queryAnalysisCmd;
-//	public SemedicoSearchCommand searchCmd;
-	public List<SearchServerCommand> serverCmds;
+	public List<SearchServerRequest> serverRequests;
 	public List<ISearchServerResponse> serverResponses;
-//	public SemedicoSearchResult searchResult;
-//	public SearchState searchState;
-//	public AbstractUserInterfaceState uiState;
 	public StopWatch sw;
 	public String chainName;
 	public List<String> enteredComponents;
@@ -49,34 +44,34 @@ public class SearchCarrier {
 		enteredComponents = new ArrayList<>();
 		sw = new StopWatch();
 		sw.start();
-		serverCmds = new ArrayList<>();
+		serverRequests = new ArrayList<>();
 		serverResponses = new ArrayList<>();
 	}
 
 	
-	public void addSearchServerCommand(SearchServerCommand serverCmd) {
-		serverCmds.add(serverCmd);
+	public void addSearchServerRequest(SearchServerRequest serverCmd) {
+		serverRequests.add(serverCmd);
 	}
 
 	public void addSearchServerResponse(ISearchServerResponse serverRsp) {
 		serverResponses.add(serverRsp);
 	}
 
-	public SearchServerCommand getSingleSearchServerCommandOrCreate() {
-		if (serverCmds.size() == 0)
-			serverCmds.add(new SearchServerCommand());
-		else if (serverCmds.size() > 1)
-			throw new IllegalStateException("There are " + serverCmds.size()
+	public SearchServerRequest getSingleSearchServerRequestOrCreate() {
+		if (serverRequests.size() == 0)
+			serverRequests.add(new SearchServerRequest());
+		else if (serverRequests.size() > 1)
+			throw new IllegalStateException("There are " + serverRequests.size()
 					+ " search server commands instead of exactly one.");
-		return serverCmds.get(0);
+		return serverRequests.get(0);
 	}
 
-	public SearchServerCommand getSingleSearchServerCommand() {
-		if (serverCmds.size() > 1)
-			throw new IllegalStateException("There are " + serverCmds.size()
+	public SearchServerRequest getSingleSearchServerRequest() {
+		if (serverRequests.size() > 1)
+			throw new IllegalStateException("There are " + serverRequests.size()
 					+ " search server commands instead of exactly one.");
-		else if (serverCmds.size() > 0)
-			return serverCmds.get(0);
+		else if (serverRequests.size() > 0)
+			return serverRequests.get(0);
 		return null;
 	}
 

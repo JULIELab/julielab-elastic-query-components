@@ -1,10 +1,10 @@
 package de.julielab.elastic.query.components.data.query;
 
-import de.julielab.elastic.query.components.data.SearchServerCommand;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
 
 /**
  * <p>
- * An abstract super class for query objects. For each {@link SearchServerCommand}, one such object is given to form the
+ * An abstract super class for query objects. For each {@link SearchServerRequest}, one such object is given to form the
  * central element of the request, the query itself. This does not include the number of documents to return, faceting
  * and such.
  * <p>
@@ -17,7 +17,7 @@ import de.julielab.elastic.query.components.data.SearchServerCommand;
  * <tt>Solr</tt>, those queries must be translated in the Solr search component.
  * </p>
  * 
- * @see SearchServerCommand#query
+ * @see SearchServerRequest#query
  * 
  * @author faessler
  * 

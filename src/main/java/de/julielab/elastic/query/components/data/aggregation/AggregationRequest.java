@@ -3,11 +3,11 @@ package de.julielab.elastic.query.components.data.aggregation;
 import java.util.HashMap;
 import java.util.Map;
 
-import de.julielab.elastic.query.components.data.SearchServerCommand;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
 
 /**
  * <p>
- * This class is meant as a part of {@link SearchServerCommand}. It expresses data aggregation commands for the search
+ * This class is meant as a part of {@link SearchServerRequest}. It expresses data aggregation commands for the search
  * server. In some cases, aggregations can be seen as a 'group by'-like feature, however the approach is more general.
  * For example, the 'maximum' aggregation only returns the maximum value of a field (or even the document score), the
  * 'terms' aggregation is basically the term facets approach. This is heavily modeled after ElasticSearch aggregations.
@@ -22,7 +22,7 @@ import de.julielab.elastic.query.components.data.SearchServerCommand;
  * @author faessler
  * 
  */
-public abstract class AggregationCommand {
+public abstract class AggregationRequest {
 	/**
 	 * The name of this aggregation to identify it in the results.
 	 */
@@ -30,15 +30,15 @@ public abstract class AggregationCommand {
 	/**
 	 * A list of sub-aggregations of this aggregation. May be <tt>null</tt>.
 	 */
-	public Map<String, AggregationCommand> subaggregations;
+	public Map<String, AggregationRequest> subaggregations;
 
-	public void addSubaggregation(AggregationCommand aggregation) {
+	public void addSubaggregation(AggregationRequest aggregation) {
 		if (null == subaggregations)
 			subaggregations = new HashMap<>();
 		subaggregations.put(aggregation.name, aggregation);
 	}
 
-	public AggregationCommand getSubaggregation(String name) {
+	public AggregationRequest getSubaggregation(String name) {
 		if (null == subaggregations || null == subaggregations.get(name))
 			return null;
 		return subaggregations.get(name);

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 
@@ -38,8 +39,9 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	 * the previous object.
 	 * 
 	 * @param objects
-	 *            A list of pair where the even-indexed elements are objects for
-	 *            the null check and odd-indexed elements are their names.
+	 *            A list of pairs where the even-indexed elements are
+	 *            {@link Supplier} that provide the object for the null check
+	 *            and odd-indexed elements are their names.
 	 */
 	protected void checkNotNull(Object... objects) {
 		if (objects.length % 2 == 1)
@@ -52,7 +54,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 					throw new IllegalArgumentException(
 							"All odd arguments must be names describing the previous object but was of class "
 									+ object.getClass().getCanonicalName() + ".");
-				String returnMessage = notNull.apply(objects[i - 1], (String) object);
+				String returnMessage = notNull.apply(((Supplier<?>) objects[i - 1]).get(), (String) object);
 				if (returnMessage != null)
 					errorMessages.add(returnMessage);
 			}
@@ -86,12 +88,27 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 		}
 	}
 
+	/**
+	 * Checks if there are error messages created by
+	 * {@link #checkNotNull(Object...)} and
+	 * {@link #checkNotEmpty(Collection...)} which need to be called before this
+	 * method. If there is at least one error message, the message is logged on
+	 * the ERROR level and an exception is thrown.
+	 * 
+	 * @throws IllegalArgumentException
+	 *             If there was at least one error.
+	 */
 	protected void stopIfError() {
 		if (errorMessages.isEmpty())
 			return;
-		errorMessages.forEach(System.out::println);
+		errorMessages.forEach(log::error);
 		throw new IllegalArgumentException("There was at least one failed precondition check for the component "
 				+ getClass().getSimpleName() + ". Check the logs above.");
+	}
+
+	@SuppressWarnings("unchecked")
+	protected <T extends SearchCarrier> T castCarrier(SearchCarrier searchCarrier) {
+		return (T) searchCarrier;
 	}
 
 	/**

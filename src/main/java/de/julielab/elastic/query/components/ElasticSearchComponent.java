@@ -3,6 +3,7 @@ package de.julielab.elastic.query.components;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.SortedSet;
@@ -64,10 +65,10 @@ import de.julielab.elastic.query.components.data.HighlightCommand;
 import de.julielab.elastic.query.components.data.HighlightCommand.HlField;
 import de.julielab.elastic.query.components.data.QueryError;
 import de.julielab.elastic.query.components.data.SearchCarrier;
-import de.julielab.elastic.query.components.data.SearchServerCommand;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
 import de.julielab.elastic.query.components.data.SortCommand;
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand;
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand.OrderCommand;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.OrderCommand;
 import de.julielab.elastic.query.components.data.aggregation.MaxAggregation;
 import de.julielab.elastic.query.components.data.aggregation.SignificantTermsAggregation;
 import de.julielab.elastic.query.components.data.aggregation.TermsAggregation;
@@ -110,9 +111,9 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	public boolean processSearch(SearchCarrier searchCarrier) {
 		StopWatch w = new StopWatch();
 		w.start();
-		List<SearchServerCommand> serverCmds = searchCarrier.serverCmds;
+		List<SearchServerRequest> serverCmds = searchCarrier.serverRequests;
 		if (null == serverCmds)
-			throw new IllegalArgumentException("A " + SearchServerCommand.class.getName()
+			throw new IllegalArgumentException("A " + SearchServerRequest.class.getName()
 					+ " is required for an ElasticSearch search, but none is present.");
 
 		// It could be that the search component occurs multiple times in a
@@ -131,7 +132,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		for (int i = 0; i < serverCmds.size(); i++) {
 			log.debug("Configuration ElasticSearch query for server command {}", i);
 
-			SearchServerCommand serverCmd = serverCmds.get(i);
+			SearchServerRequest serverCmd = serverCmds.get(i);
 
 			if (null != serverCmd.query) {
 				handleSearchRequest(searchRequestBuilders, serverCmd);
@@ -191,7 +192,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		return false;
 	}
 
-	protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerCommand serverCmd) {
+	protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerRequest serverCmd) {
 		SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
 				SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
 		SearchRequestBuilder suggestionRequestBuilder = client.prepareSearch(serverCmd.index).suggest(suggestBuilder);
@@ -203,7 +204,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	}
 
 	protected void handleSearchRequest(List<SearchRequestBuilder> searchRequestBuilders,
-			SearchServerCommand serverCmd) {
+			SearchServerRequest serverCmd) {
 		if (null == serverCmd.fieldsToReturn)
 			serverCmd.addField("*");
 
@@ -212,13 +213,16 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
 		if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
 			srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
+		
+		log.trace("Searching on index {} and types {}", serverCmd.index, serverCmd.indexTypes);
+		
 
 		srb.setFetchSource(serverCmd.fetchSource);
 		// srb.setExplain(true);
 
 		if (serverCmd.downloadCompleteResults)
-			;
-		srb.setScroll(TimeValue.timeValueMinutes(5));
+			// TODO use scan!
+			srb.setScroll(TimeValue.timeValueMinutes(5));
 
 		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
 		srb.setQuery(queryBuilder);
@@ -234,8 +238,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		else
 			srb.setSize(0);
 
-		if (null != serverCmd.aggregationCmds) {
-			for (AggregationCommand aggCmd : serverCmd.aggregationCmds.values()) {
+		if (null != serverCmd.aggregationRequests) {
+			for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
 				log.debug("Adding top aggregation command {} to query.", aggCmd.name);
 				AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
 				srb.addAggregation(aggregationBuilder);
@@ -308,7 +312,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, srb.toString());
 	}
 
-	protected AbstractAggregationBuilder<?> buildAggregation(AggregationCommand aggCmd) {
+	protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {
 		if (TermsAggregation.class.equals(aggCmd.getClass())) {
 			TermsAggregation termsAgg = (TermsAggregation) aggCmd;
 
@@ -393,7 +397,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 			// Add sub aggregations
 			if (null != termsAgg.subaggregations) {
-				for (AggregationCommand subAggCmd : termsAgg.subaggregations.values()) {
+				for (AggregationRequest subAggCmd : termsAgg.subaggregations.values()) {
 					termsBuilder.subAggregation(buildAggregation(subAggCmd));
 				}
 			}
@@ -405,7 +409,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (null != maxAgg.field)
 				maxBuilder.field(maxAgg.field);
 			if (null != maxAgg.script)
-				maxBuilder.script(new Script(ScriptType.INLINE, SEMEDICO_DEFAULT_SCRIPT_LANG, maxAgg.script, null));
+				maxBuilder.script(new Script(ScriptType.INLINE, maxAgg.scriptLang.name(), maxAgg.script, Collections.emptyMap()));
 			return maxBuilder;
 		}
 		if (TopHitsAggregation.class.equals(aggCmd.getClass())) {

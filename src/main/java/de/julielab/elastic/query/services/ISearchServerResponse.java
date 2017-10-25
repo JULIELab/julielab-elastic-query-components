@@ -5,7 +5,7 @@ import java.util.stream.Stream;
 
 import de.julielab.elastic.query.components.data.ISearchServerDocument;
 import de.julielab.elastic.query.components.data.QueryError;
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.aggregation.IAggregationResult;
 
 public interface ISearchServerResponse {
@@ -21,7 +21,7 @@ public interface ISearchServerResponse {
 	 */
 	Stream<ISearchServerDocument> getDocumentResults();
 
-	IAggregationResult getAggregationResult(AggregationCommand aggCmd);
+	IAggregationResult getAggregationResult(AggregationRequest aggCmd);
 
 	long getNumFound();
 
@@ -36,5 +36,7 @@ public interface ISearchServerResponse {
 	QueryError getQueryError();
 	
 	String getQueryErrorMessage();
+
+	boolean hasQueryError();
 
 }

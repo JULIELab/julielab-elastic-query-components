@@ -1,6 +1,6 @@
 package de.julielab.elastic.query.components.data;
 
-import de.julielab.elastic.query.components.data.aggregation.AggregationCommand.OrderCommand;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.OrderCommand;
 
 public class FieldTermsCommand {
 	
