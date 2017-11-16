@@ -7,6 +7,7 @@ import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import de.julielab.elastic.query.components.data.SearchCarrier;
 
@@ -23,6 +24,8 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	private BiFunction<Object, String, String> notNull = (o, m) -> o == null ? m + " is null." : null;
 	private BiFunction<Collection<?>, String, String> notEmpty = (o, m) -> o.isEmpty() ? m + " is empty." : null;
 	protected Logger log;
+	
+	private static final Logger componentChainLogger = LoggerFactory.getLogger("de.julielab.elastic.query.ComponentChain");
 
 	public AbstractSearchComponent(Logger log) {
 		this.log = log;
@@ -70,7 +73,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	 *            A list of pair where the even-indexed elements are collections
 	 *            for the empty check and odd-indexed elements are their names.
 	 */
-	protected void checkNotEmpty(Collection<?>... objects) {
+	protected void checkNotEmpty(Object... objects) {
 		if (objects.length % 2 == 1)
 			throw new IllegalArgumentException(
 					"An even number of arguments is required. The even elements are the objects to test for null, the odd arguments are their names.");
@@ -81,7 +84,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 					throw new IllegalArgumentException(
 							"All odd arguments must be names describing the previous object but was of class "
 									+ object.getClass().getCanonicalName() + ".");
-				String returnMessage = notEmpty.apply(objects[i - 1], (String) object);
+				String returnMessage = notEmpty.apply((Collection<?>) objects[i - 1], (String) object);
 				if (returnMessage != null)
 					errorMessages.add(returnMessage);
 			}
@@ -121,7 +124,10 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 		errorMessages.clear();
 		searchCarrier.enteredComponents.add(getClass().getSimpleName());
 		try {
-			return processSearch(searchCarrier);
+			componentChainLogger.debug("Now calling search component \"{}\"", getClass().getSimpleName());
+			boolean terminateChain = processSearch(searchCarrier);
+			componentChainLogger.debug("Search component \"{}\" returned {}", getClass().getSimpleName(), terminateChain);
+			return terminateChain;
 		} catch (Exception e) {
 			log.error(
 					"An exception has occurred in component {}. The visited sequence of components until this point was: {}",

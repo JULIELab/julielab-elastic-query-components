@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
@@ -99,22 +100,23 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	private static final int DEFAULT_FRAGSIZE = 100;
 	private static final int DEFAULT_NUMBER_FRAGS = 5;
 
-	private static final String SEMEDICO_DEFAULT_SCRIPT_LANG = "groovy";
 	private Client client;
 
 	public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
 		super(log);
+		log.info("Obtaining ElasticSearch client...");
 		client = searchClientProvider.getSearchClient().getClient();
+		log.info("ElasticSearch client retrieved.");
 	}
 
 	@Override
 	public boolean processSearch(SearchCarrier searchCarrier) {
 		StopWatch w = new StopWatch();
 		w.start();
-		List<SearchServerRequest> serverCmds = searchCarrier.serverRequests;
-		if (null == serverCmds)
-			throw new IllegalArgumentException("A " + SearchServerRequest.class.getName()
-					+ " is required for an ElasticSearch search, but none is present.");
+		List<SearchServerRequest> serverRequests = searchCarrier.serverRequests;
+		checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
+		checkNotEmpty(serverRequests, "Server requests");
+		stopIfError();
 
 		// It could be that the search component occurs multiple times in a
 		// search chain. But then, the last response(s) should have been
@@ -126,29 +128,34 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		// B-terms where there are multiple search nodes.
 		// We should just take care that the results are ordered in a parallel
 		// way to the server commands, see at the end of the method.
-		List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverCmds.size());
-		List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverCmds.size());
-		log.debug("Number of searchs server commands: {}", serverCmds.size());
-		for (int i = 0; i < serverCmds.size(); i++) {
-			log.debug("Configuration ElasticSearch query for server command {}", i);
+		List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverRequests.size());
+		List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverRequests.size());
+		log.debug("Number of search server commands: {}", serverRequests.size());
+		for (int i = 0; i < serverRequests.size(); i++) {
+			log.debug("Configuring ElasticSearch query for server command {}", i);
 
-			SearchServerRequest serverCmd = serverCmds.get(i);
+			SearchServerRequest serverRequest = serverRequests.get(i);
+			checkNotNull((Supplier<?>) () -> serverRequest, "Server request " + i);
+			stopIfError();
+			checkNotNull((Supplier<?>) () -> serverRequest.query, "Server request query for request " + i);
+			stopIfError();
 
-			if (null != serverCmd.query) {
-				handleSearchRequest(searchRequestBuilders, serverCmd);
+			if (null != serverRequest.query) {
+				handleSearchRequest(searchRequestBuilders, serverRequest);
 			}
-			if (null != serverCmd.suggestionText) {
-				handleSuggestionRequest(suggestionBuilders, serverCmd);
+			if (null != serverRequest.suggestionText) {
+				handleSuggestionRequest(suggestionBuilders, serverRequest);
 			}
 
 		}
 
 		// Send the query to the server
 		try {
-			if (!searchRequestBuilders.isEmpty()) {
+			if (searchRequestBuilders.size() == searchCarrier.serverRequests.size()) {
 				MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
 				for (SearchRequestBuilder srb : searchRequestBuilders)
 					multiSearch.add(srb);
+				log.debug("Issueing {} search request as a multi search", searchRequestBuilders.size());
 				MultiSearchResponse multiSearchResponse = multiSearch.execute().actionGet();
 				Item[] responses = multiSearchResponse.getResponses();
 				for (int i = 0; i < responses.length; i++) {
@@ -157,28 +164,33 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log, response, client);
-					searchCarrier.addSearchServerResponse(serverRsp);
+					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(response, client);
 
 					if (null == response) {
 						serverRsp.setQueryError(QueryError.NO_RESPONSE);
 						serverRsp.setQueryErrorMessage(item.getFailureMessage());
+
 					}
+					searchCarrier.addSearchServerResponse(serverRsp);
 				}
+			} else {
+				throw new IllegalStateException(
+						"There is at least one server request for which on ElasticSearch query could be created. This shouldn't happen.");
 			}
 			if (!suggestionBuilders.isEmpty()) {
 				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
 					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-					searchCarrier
-							.addSearchServerResponse(new ElasticSearchServerResponse(log, suggestResponse, client));
+					searchCarrier.addSearchServerResponse(new ElasticSearchServerResponse(suggestResponse, client));
 				}
 			}
 			w.stop();
 			log.debug("ElasticSearch process took {}ms ({}s)", w.getTime(), w.getTime() / 1000);
 		} catch (NoNodeAvailableException e) {
 			log.error("No ElasticSearch node available: {}", e.getMessage());
-			ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(log);
+			ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse();
 			serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
+			serverRsp.setQueryErrorMessage(e.getMessage());
+			searchCarrier.addSearchServerResponse(serverRsp);
 			// SemedicoSearchResult errorResult = new
 			// SemedicoSearchResult(searchCarrier.searchCmd.semedicoQuery);
 			// errorResult.errorMessage = "The search infrastructure currently
@@ -213,9 +225,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
 		if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
 			srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
-		
+
 		log.trace("Searching on index {} and types {}", serverCmd.index, serverCmd.indexTypes);
-		
 
 		srb.setFetchSource(serverCmd.fetchSource);
 		// srb.setExplain(true);
@@ -409,7 +420,8 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (null != maxAgg.field)
 				maxBuilder.field(maxAgg.field);
 			if (null != maxAgg.script)
-				maxBuilder.script(new Script(ScriptType.INLINE, maxAgg.scriptLang.name(), maxAgg.script, Collections.emptyMap()));
+				maxBuilder.script(
+						new Script(ScriptType.INLINE, maxAgg.scriptLang.name(), maxAgg.script, Collections.emptyMap()));
 			return maxBuilder;
 		}
 		if (TopHitsAggregation.class.equals(aggCmd.getClass())) {
@@ -599,7 +611,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 	}
 
 	protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
-		log.debug("Building query string query.");
+		log.trace("Building query string query.");
 		MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
 		for (int i = 0; i < query.fields.size(); i++) {
 			String field = query.fields.get(i);

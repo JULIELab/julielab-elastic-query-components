@@ -31,6 +31,6 @@ public class BoolQuery extends SearchServerQuery {
 
 	@Override
 	public String toString() {
-		return "BoolQuery [clauses=" + clauses + ", minimumShouldMatch=" + minimumShouldMatch + "]";
+		return "BoolQuery [" + clauses + ", minimumShouldMatch=" + minimumShouldMatch + "]";
 	}
 }

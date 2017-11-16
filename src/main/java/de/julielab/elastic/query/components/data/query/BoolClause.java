@@ -27,6 +27,6 @@ public class BoolClause {
 
 	@Override
 	public String toString() {
-		return "BoolClause [occur=" + occur + ", queries=" + queries + "]";
+		return "BoolClause [" + queries + ", " + occur + "]";
 	}
 }

@@ -30,6 +30,7 @@ import org.elasticsearch.search.suggest.Suggest.Suggestion;
 import org.elasticsearch.search.suggest.Suggest.Suggestion.Entry.Option;
 import org.elasticsearch.search.suggest.completion.CompletionSuggestion;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.aggregation.IAggregationResult;
@@ -47,18 +48,19 @@ import de.julielab.elastic.query.services.ISearchServerResponse;
 
 public class ElasticSearchServerResponse implements ISearchServerResponse {
 
+	
+	private static final Logger log = LoggerFactory.getLogger(ElasticSearchServerResponse.class);
+	
 	private SearchResponse response;
 	private boolean searchServerNotReachable;
 	private boolean isSuggestionSearchResponse;
-	private Logger log;
 	private Suggest suggest;
 	private Map<String, Aggregation> aggregationsByName;
 	private QueryError queryError;
 	private Client client;
 	private String queryErrorMessage;
 
-	public ElasticSearchServerResponse(Logger log, SearchResponse response, Client client) {
-		this.log = log;
+	public ElasticSearchServerResponse(SearchResponse response, Client client) {
 		this.response = response;
 		this.client = client;
 		if (response != null) {
@@ -68,8 +70,8 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 		}
 	}
 
-	public ElasticSearchServerResponse(Logger log) {
-		this(log, null, null);
+	public ElasticSearchServerResponse() {
+		this(null, null);
 	}
 
 	public IAggregationResult getAggregationResult(AggregationRequest aggCmd) {
