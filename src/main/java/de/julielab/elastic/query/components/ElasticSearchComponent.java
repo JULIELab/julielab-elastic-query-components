@@ -234,7 +234,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		if (serverCmd.downloadCompleteResults)
 			// TODO use scan!
 			srb.setScroll(TimeValue.timeValueMinutes(5));
-
+		
 		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
 		srb.setQuery(queryBuilder);
 
