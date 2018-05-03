@@ -51,14 +51,14 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 	
 	private static final Logger log = LoggerFactory.getLogger(ElasticSearchServerResponse.class);
 	
-	private SearchResponse response;
-	private boolean searchServerNotReachable;
-	private boolean isSuggestionSearchResponse;
-	private Suggest suggest;
-	private Map<String, Aggregation> aggregationsByName;
-	private QueryError queryError;
-	private Client client;
-	private String queryErrorMessage;
+	protected SearchResponse response;
+	protected boolean searchServerNotReachable;
+	protected boolean isSuggestionSearchResponse;
+	protected Suggest suggest;
+	protected Map<String, Aggregation> aggregationsByName;
+	protected QueryError queryError;
+	protected Client client;
+	protected String queryErrorMessage;
 
 	public ElasticSearchServerResponse(SearchResponse response, Client client) {
 		this.response = response;
@@ -162,19 +162,19 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 
 					@Override
 					public Optional<List<Object>> getFieldValues(String fieldName) {
-						return Optional.ofNullable((List<Object>) source.get(fieldName).getValues());
+						return Optional.ofNullable(source.get(fieldName).getValues());
 					}
 
 					@SuppressWarnings("unchecked")
 					@Override
 					public <V> Optional<V> getFieldValue(String fieldName) {
-						return Optional.ofNullable((V) source.get(fieldName).getValue());
+						return Optional.ofNullable(source.get(fieldName).getValue());
 					}
 
 					@SuppressWarnings("unchecked")
 					@Override
 					public <V> Optional<V> get(String fieldName) {
-						return Optional.ofNullable(((V) source.get(fieldName).getValue()));
+						return Optional.ofNullable((source.get(fieldName).getValue()));
 					}
 
 					@Override
@@ -246,22 +246,7 @@ public class ElasticSearchServerResponse implements ISearchServerResponse {
 					return null;
 				log.trace("Returning next document at position {} of the current scroll batch.", pos);
 				SearchHit hit = currentHits[pos++];
-				// get Highlighting, if any
-				Map<String, HighlightField> esHLs = hit.getHighlightFields();
-				// this map will for each highlighted field name contain the
-				// list of highlights
-				Map<String, List<String>> fieldHLs = new HashMap<>(esHLs.size());
-				for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
-					String fieldName = esFieldHLs.getKey();
-					HighlightField hf = esFieldHLs.getValue();
-
-					List<String> hLFragments = new ArrayList<>(hf.fragments().length);
-					for (Text esHLFragments : hf.getFragments())
-						hLFragments.add(esHLFragments.string());
-					fieldHLs.put(fieldName, hLFragments);
-				}
-
-				ISearchServerDocument document = new ElasticSearchDocumentHit(hit);
+				ElasticSearchDocumentHit document = new ElasticSearchDocumentHit(hit);
 				return document;
 			}
 

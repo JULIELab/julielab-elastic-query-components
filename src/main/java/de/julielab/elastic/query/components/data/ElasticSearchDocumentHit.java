@@ -1,13 +1,5 @@
 package de.julielab.elastic.query.components.data;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
-
 import org.apache.commons.lang.NotImplementedException;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.search.SearchHit;
@@ -15,11 +7,14 @@ import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 
+import java.util.*;
+import java.util.Map.Entry;
+
 public class ElasticSearchDocumentHit implements ISearchServerDocument {
 
 	private SearchHit hit;
-	private Map<String, List<String>> semedicoFieldHLs;
-	Map<String, List<ISearchServerDocument>> innerHits;
+	private Map<String, List<String>> fieldHightlights;
+	private Map<String, List<ISearchServerDocument>> innerHits;
 
 	public ElasticSearchDocumentHit(SearchHit hit) {
 		this.hit = hit;
@@ -27,7 +22,7 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 
 	@Override
 	public Optional<List<Object>> getFieldValues(String fieldName) {
-		SearchHitField field = hit.field(fieldName);
+		SearchHitField field = hit.getField(fieldName);
 		if (null == field)
 			return Optional.empty();
 		return Optional.ofNullable(field.getValues());
@@ -35,13 +30,13 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 
 	@Override
 	public <V> Optional<V> getFieldValue(String fieldName) {
-		SearchHitField field = hit.field(fieldName);
-		return Optional.ofNullable(field).map(f -> f.getValue());
+		SearchHitField field = hit.getField(fieldName);
+		return Optional.ofNullable(field).map(SearchHitField::getValue);
 	}
 
 	@Override
 	public <V> Optional<V> get(String fieldName) {
-		SearchHitField field = hit.field(fieldName);
+		SearchHitField field = hit.getField(fieldName);
 		if (null == field)
 			return Optional.empty();
 		return Optional.ofNullable(field.getValue());
@@ -90,8 +85,8 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	@Override
 	public Map<String, List<String>> getHighlights() {
 		Map<String, HighlightField> esHLs = hit.getHighlightFields();
-		if (null == semedicoFieldHLs) {
-			semedicoFieldHLs = new HashMap<>(esHLs.size());
+		if (null == fieldHightlights) {
+			fieldHightlights = new HashMap<>(esHLs.size());
 
 			for (Entry<String, HighlightField> esFieldHLs : esHLs.entrySet()) {
 				String fieldName = esFieldHLs.getKey();
@@ -100,10 +95,10 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 				List<String> semedicoHLFragments = new ArrayList<>(hf.fragments().length);
 				for (Text esHLFragments : hf.getFragments())
 					semedicoHLFragments.add(esHLFragments.string());
-				semedicoFieldHLs.put(fieldName, semedicoHLFragments);
+				fieldHightlights.put(fieldName, semedicoHLFragments);
 			}
 		}
-		return semedicoFieldHLs;
+		return fieldHightlights;
 	}
 
 	@Override
