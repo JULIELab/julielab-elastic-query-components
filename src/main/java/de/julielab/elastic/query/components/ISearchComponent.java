@@ -18,16 +18,14 @@
  */
 package de.julielab.elastic.query.components;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-
 import de.julielab.elastic.query.components.data.SearchCarrier;
+import de.julielab.elastic.query.services.ISearchServerResponse;
 
 /**
  * @author faessler
  * 
  */
 public interface ISearchComponent {
-	public boolean process(SearchCarrier searchCarrier);
+	public <R extends ISearchServerResponse> boolean process(SearchCarrier<R> elasticSearchCarrier);
 
 }

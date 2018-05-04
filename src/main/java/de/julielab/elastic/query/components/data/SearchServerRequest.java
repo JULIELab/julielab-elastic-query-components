@@ -99,7 +99,7 @@ public class SearchServerRequest {
 	 * Causes the return of all results of the query, not only a page or a
 	 * batch. May require additional requests to the server which are
 	 * automatically done by the
-	 * {@link ElasticSearchServerResponse#getDocumentResults()}.
+	 * {@link ElasticServerResponse#getDocumentResults()}.
 	 */
 	public boolean downloadCompleteResults;
 

@@ -10,6 +10,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.function.Supplier;
 
+import de.julielab.elastic.query.components.data.*;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
@@ -61,13 +62,7 @@ import org.elasticsearch.search.suggest.SuggestBuilder;
 import org.elasticsearch.search.suggest.SuggestBuilders;
 import org.slf4j.Logger;
 
-import de.julielab.elastic.query.components.data.ElasticSearchServerResponse;
-import de.julielab.elastic.query.components.data.HighlightCommand;
 import de.julielab.elastic.query.components.data.HighlightCommand.HlField;
-import de.julielab.elastic.query.components.data.QueryError;
-import de.julielab.elastic.query.components.data.SearchCarrier;
-import de.julielab.elastic.query.components.data.SearchServerRequest;
-import de.julielab.elastic.query.components.data.SortCommand;
 import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.OrderCommand;
 import de.julielab.elastic.query.components.data.aggregation.MaxAggregation;
@@ -111,9 +106,10 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 	@Override
 	public boolean processSearch(SearchCarrier searchCarrier) {
+		ElasticSearchCarrier elasticSearchCarrier = castCarrier(searchCarrier);
 		StopWatch w = new StopWatch();
 		w.start();
-		List<SearchServerRequest> serverRequests = searchCarrier.serverRequests;
+		List<SearchServerRequest> serverRequests = elasticSearchCarrier.serverRequests;
 		checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
 		checkNotEmpty(serverRequests, "Server requests");
 		stopIfError();
@@ -121,7 +117,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		// It could be that the search component occurs multiple times in a
 		// search chain. But then, the last response(s) should have been
 		// consumed by now.
-		searchCarrier.serverResponses.clear();
+		elasticSearchCarrier.serverResponses.clear();
 
 		// One "Semedico search" may result in multiple search server commands,
 		// e.g. suggestions where for each facet suggestions are searched or for
@@ -151,7 +147,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 		// Send the query to the server
 		try {
-			if (searchRequestBuilders.size() == searchCarrier.serverRequests.size()) {
+			if (searchRequestBuilders.size() == elasticSearchCarrier.serverRequests.size()) {
 				MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
 				for (SearchRequestBuilder srb : searchRequestBuilders)
 					multiSearch.add(srb);
@@ -164,14 +160,14 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 					log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse(response, client);
+					ElasticServerResponse serverRsp = new ElasticServerResponse(response, client);
 
 					if (null == response) {
 						serverRsp.setQueryError(QueryError.NO_RESPONSE);
 						serverRsp.setQueryErrorMessage(item.getFailureMessage());
 
 					}
-					searchCarrier.addSearchServerResponse(serverRsp);
+					elasticSearchCarrier.addSearchServerResponse(serverRsp);
 				}
 			} else {
 				throw new IllegalStateException(
@@ -180,24 +176,24 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 			if (!suggestionBuilders.isEmpty()) {
 				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
 					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-					searchCarrier.addSearchServerResponse(new ElasticSearchServerResponse(suggestResponse, client));
+					elasticSearchCarrier.addSearchServerResponse(new ElasticServerResponse(suggestResponse, client));
 				}
 			}
 			w.stop();
 			log.debug("ElasticSearch process took {}ms ({}s)", w.getTime(), w.getTime() / 1000);
 		} catch (NoNodeAvailableException e) {
 			log.error("No ElasticSearch node available: {}", e.getMessage());
-			ElasticSearchServerResponse serverRsp = new ElasticSearchServerResponse();
+			ElasticServerResponse serverRsp = new ElasticServerResponse();
 			serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
 			serverRsp.setQueryErrorMessage(e.getMessage());
-			searchCarrier.addSearchServerResponse(serverRsp);
+			elasticSearchCarrier.addSearchServerResponse(serverRsp);
 			// SemedicoSearchResult errorResult = new
-			// SemedicoSearchResult(searchCarrier.searchCmd.semedicoQuery);
+			// SemedicoSearchResult(elasticSearchCarrier.searchCmd.semedicoQuery);
 			// errorResult.errorMessage = "The search infrastructure currently
 			// undergoes maintenance, please try again later."
 			// + " If this error persists, please inform us about the issue."
 			// + " We apologize for the inconvenience.";
-			// searchCarrier.searchResult = errorResult;
+			// elasticSearchCarrier.searchResult = errorResult;
 			return true;
 		}
 

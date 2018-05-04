@@ -1,19 +1,20 @@
 package de.julielab.elastic.query.components;
 
+import de.julielab.elastic.query.components.data.ElasticSearchCarrier;
+import de.julielab.elastic.query.components.data.SearchCarrier;
+import de.julielab.elastic.query.services.ISearchServerResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import de.julielab.elastic.query.components.data.SearchCarrier;
-
 /**
  * Superclass for all search components to enable some centralized functions
- * such as the creation of a trace in the SearchCarrier about which components
+ * such as the creation of a trace in the ElasticSearchCarrier about which components
  * have been visited in a chain.
  * 
  * @author faessler
@@ -94,7 +95,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	/**
 	 * Checks if there are error messages created by
 	 * {@link #checkNotNull(Object...)} and
-	 * {@link #checkNotEmpty(Collection...)} which need to be called before this
+	 * {@link #checkNotEmpty(Object...)} which need to be called before this
 	 * method. If there is at least one error message, the message is logged on
 	 * the ERROR level and an exception is thrown.
 	 * 
@@ -110,28 +111,28 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	}
 
 	@SuppressWarnings("unchecked")
-	protected <T extends SearchCarrier> T castCarrier(SearchCarrier searchCarrier) {
-		return (T) searchCarrier;
+	protected <T extends SearchCarrier<?>> T castCarrier(SearchCarrier<?> elasticSearchCarrier) {
+		return (T) elasticSearchCarrier;
 	}
 
 	/**
 	 * Method to call when actually running the component. Registers this
-	 * component in the <tt>searchCarrier</tt> and then calls
+	 * component in the <tt>elasticSearchCarrier</tt> and then calls
 	 * {@link #processSearch(SearchCarrier)}.
 	 */
 	@Override
-	public boolean process(SearchCarrier searchCarrier) {
+	public <R extends ISearchServerResponse> boolean process(SearchCarrier<R> elasticSearchCarrier) {
 		errorMessages.clear();
-		searchCarrier.enteredComponents.add(getClass().getSimpleName());
+		elasticSearchCarrier.enteredComponents.add(getClass().getSimpleName());
 		try {
 			componentChainLogger.debug("Now calling search component \"{}\"", getClass().getSimpleName());
-			boolean terminateChain = processSearch(searchCarrier);
+			boolean terminateChain = processSearch(elasticSearchCarrier);
 			componentChainLogger.debug("Search component \"{}\" returned {}", getClass().getSimpleName(), terminateChain);
 			return terminateChain;
 		} catch (Exception e) {
 			log.error(
 					"An exception has occurred in component {}. The visited sequence of components until this point was: {}",
-					getClass().getSimpleName(), searchCarrier.enteredComponents);
+					getClass().getSimpleName(), elasticSearchCarrier.enteredComponents);
 			throw e;
 		}
 	}
@@ -139,9 +140,9 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	/**
 	 * Overriding point for subclasses.
 	 * 
-	 * @param searchCarrier
+	 * @param elasticSearchCarrier
 	 * @return
 	 */
-	protected abstract boolean processSearch(SearchCarrier searchCarrier);
+	protected abstract <R extends ISearchServerResponse> boolean processSearch(SearchCarrier<R> elasticSearchCarrier);
 
 }
