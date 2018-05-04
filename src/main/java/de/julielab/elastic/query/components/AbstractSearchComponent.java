@@ -20,7 +20,7 @@ import java.util.function.Supplier;
  * @author faessler
  * 
  */
-public abstract class AbstractSearchComponent implements ISearchComponent {
+public abstract class AbstractSearchComponent<C extends SearchCarrier> implements ISearchComponent<C> {
 
 	private BiFunction<Object, String, String> notNull = (o, m) -> o == null ? m + " is null." : null;
 	private BiFunction<Collection<?>, String, String> notEmpty = (o, m) -> o.isEmpty() ? m + " is empty." : null;
@@ -121,7 +121,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	 * {@link #processSearch(SearchCarrier)}.
 	 */
 	@Override
-	public <R extends ISearchServerResponse> boolean process(SearchCarrier<R> elasticSearchCarrier) {
+	public boolean process(SearchCarrier elasticSearchCarrier) {
 		errorMessages.clear();
 		elasticSearchCarrier.addEnteredComponent(getClass().getSimpleName());
 		try {
@@ -143,6 +143,6 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	 * @param elasticSearchCarrier
 	 * @return
 	 */
-	protected abstract <R extends ISearchServerResponse> boolean processSearch(SearchCarrier<R> elasticSearchCarrier);
+	protected abstract boolean processSearch(SearchCarrier elasticSearchCarrier);
 
 }

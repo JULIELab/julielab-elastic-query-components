@@ -1,16 +1,13 @@
 package de.julielab.elastic.query.components;
 
-import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.TreeSet;
-import java.util.function.Supplier;
-
 import de.julielab.elastic.query.components.data.*;
+import de.julielab.elastic.query.components.data.HighlightCommand.HlField;
+import de.julielab.elastic.query.components.data.aggregation.*;
+import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.OrderCommand;
+import de.julielab.elastic.query.components.data.query.*;
+import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.BoostMode;
+import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.FieldValueFactor;
+import de.julielab.elastic.query.services.ISearchClientProvider;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
@@ -25,22 +22,8 @@ import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
-import org.elasticsearch.index.query.InnerHitBuilder;
-import org.elasticsearch.index.query.MatchAllQueryBuilder;
-import org.elasticsearch.index.query.MatchPhraseQueryBuilder;
-import org.elasticsearch.index.query.MatchQueryBuilder;
-import org.elasticsearch.index.query.MultiMatchQueryBuilder;
+import org.elasticsearch.index.query.*;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
-import org.elasticsearch.index.query.NestedQueryBuilder;
-import org.elasticsearch.index.query.Operator;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.QueryStringQueryBuilder;
-import org.elasticsearch.index.query.TermQueryBuilder;
-import org.elasticsearch.index.query.TermsQueryBuilder;
-import org.elasticsearch.index.query.WildcardQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FieldValueFactorFunctionBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
@@ -62,623 +45,600 @@ import org.elasticsearch.search.suggest.SuggestBuilder;
 import org.elasticsearch.search.suggest.SuggestBuilders;
 import org.slf4j.Logger;
 
-import de.julielab.elastic.query.components.data.HighlightCommand.HlField;
-import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
-import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.OrderCommand;
-import de.julielab.elastic.query.components.data.aggregation.MaxAggregation;
-import de.julielab.elastic.query.components.data.aggregation.SignificantTermsAggregation;
-import de.julielab.elastic.query.components.data.aggregation.TermsAggregation;
-import de.julielab.elastic.query.components.data.aggregation.TopHitsAggregation;
-import de.julielab.elastic.query.components.data.query.BoolClause;
-import de.julielab.elastic.query.components.data.query.BoolQuery;
-import de.julielab.elastic.query.components.data.query.ConstantScoreQuery;
-import de.julielab.elastic.query.components.data.query.FunctionScoreQuery;
-import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.BoostMode;
-import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.FieldValueFactor;
-import de.julielab.elastic.query.components.data.query.LuceneSyntaxQuery;
-import de.julielab.elastic.query.components.data.query.MatchAllQuery;
-import de.julielab.elastic.query.components.data.query.MatchPhraseQuery;
-import de.julielab.elastic.query.components.data.query.MatchQuery;
-import de.julielab.elastic.query.components.data.query.MultiMatchQuery;
-import de.julielab.elastic.query.components.data.query.NestedQuery;
-import de.julielab.elastic.query.components.data.query.SearchServerQuery;
-import de.julielab.elastic.query.components.data.query.TermQuery;
-import de.julielab.elastic.query.components.data.query.TermsQuery;
-import de.julielab.elastic.query.components.data.query.WildcardQuery;
-import de.julielab.elastic.query.services.ISearchClientProvider;
+import java.lang.reflect.Array;
+import java.util.*;
+import java.util.function.Supplier;
 
-public class ElasticSearchComponent extends AbstractSearchComponent implements ISearchServerComponent {
+public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSearchComponent<C> implements ISearchServerComponent<C> {
 
-	// The following highlighting-defaults are taken from
-	// http://www.elasticsearch.org/guide/reference/api/search/highlighting/
-	// Default size of highlighting fragments
-	private static final int DEFAULT_FRAGSIZE = 100;
-	private static final int DEFAULT_NUMBER_FRAGS = 5;
+    // The following highlighting-defaults are taken from
+    // http://www.elasticsearch.org/guide/reference/api/search/highlighting/
+    // Default size of highlighting fragments
+    private static final int DEFAULT_FRAGSIZE = 100;
+    private static final int DEFAULT_NUMBER_FRAGS = 5;
 
-	private Client client;
+    private Client client;
 
-	public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
-		super(log);
-		log.info("Obtaining ElasticSearch client...");
-		client = searchClientProvider.getSearchClient().getClient();
-		log.info("ElasticSearch client retrieved.");
-	}
+    public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
+        super(log);
+        log.info("Obtaining ElasticSearch client...");
+        client = searchClientProvider.getSearchClient().getClient();
+        log.info("ElasticSearch client retrieved.");
+    }
 
-	@Override
-	public boolean processSearch(SearchCarrier searchCarrier) {
-		ElasticSearchCarrier elasticSearchCarrier = castCarrier(searchCarrier);
-		StopWatch w = new StopWatch();
-		w.start();
-		List<SearchServerRequest> serverRequests = elasticSearchCarrier.getServerRequests();
-		checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
-		checkNotEmpty(serverRequests, "Server requests");
-		stopIfError();
+    @Override
+    public boolean processSearch(SearchCarrier searchCarrier) {
+        ElasticSearchCarrier elasticSearchCarrier = castCarrier(searchCarrier);
+        StopWatch w = new StopWatch();
+        w.start();
+        List<SearchServerRequest> serverRequests = elasticSearchCarrier.getServerRequests();
+        checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
+        checkNotEmpty(serverRequests, "Server requests");
+        stopIfError();
 
-		// It could be that the search component occurs multiple times in a
-		// search chain. But then, the last response(s) should have been
-		// consumed by now.
-		elasticSearchCarrier.clearSearchResponses();
+        // It could be that the search component occurs multiple times in a
+        // search chain. But then, the last response(s) should have been
+        // consumed by now.
+        elasticSearchCarrier.clearSearchResponses();
 
-		// One "Semedico search" may result in multiple search server commands,
-		// e.g. suggestions where for each facet suggestions are searched or for
-		// B-terms where there are multiple search nodes.
-		// We should just take care that the results are ordered in a parallel
-		// way to the server commands, see at the end of the method.
-		List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverRequests.size());
-		List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverRequests.size());
-		log.debug("Number of search server commands: {}", serverRequests.size());
-		for (int i = 0; i < serverRequests.size(); i++) {
-			log.debug("Configuring ElasticSearch query for server command {}", i);
+        // One "Semedico search" may result in multiple search server commands,
+        // e.g. suggestions where for each facet suggestions are searched or for
+        // B-terms where there are multiple search nodes.
+        // We should just take care that the results are ordered in a parallel
+        // way to the server commands, see at the end of the method.
+        List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverRequests.size());
+        List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverRequests.size());
+        log.debug("Number of search server commands: {}", serverRequests.size());
+        for (int i = 0; i < serverRequests.size(); i++) {
+            log.debug("Configuring ElasticSearch query for server command {}", i);
 
-			SearchServerRequest serverRequest = serverRequests.get(i);
-			checkNotNull((Supplier<?>) () -> serverRequest, "Server request " + i);
-			stopIfError();
-			checkNotNull((Supplier<?>) () -> serverRequest.query, "Server request query for request " + i);
-			stopIfError();
+            SearchServerRequest serverRequest = serverRequests.get(i);
+            checkNotNull((Supplier<?>) () -> serverRequest, "Server request " + i);
+            stopIfError();
+            checkNotNull((Supplier<?>) () -> serverRequest.query, "Server request query for request " + i);
+            stopIfError();
 
-			if (null != serverRequest.query) {
-				handleSearchRequest(searchRequestBuilders, serverRequest);
-			}
-			if (null != serverRequest.suggestionText) {
-				handleSuggestionRequest(suggestionBuilders, serverRequest);
-			}
+            if (null != serverRequest.query) {
+                handleSearchRequest(searchRequestBuilders, serverRequest);
+            }
+            if (null != serverRequest.suggestionText) {
+                handleSuggestionRequest(suggestionBuilders, serverRequest);
+            }
 
-		}
+        }
 
-		// Send the query to the server
-		try {
-			if (searchRequestBuilders.size() == elasticSearchCarrier.getServerRequests().size()) {
-				MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
-				for (SearchRequestBuilder srb : searchRequestBuilders)
-					multiSearch.add(srb);
-				log.debug("Issueing {} search request as a multi search", searchRequestBuilders.size());
-				MultiSearchResponse multiSearchResponse = multiSearch.execute().actionGet();
-				Item[] responses = multiSearchResponse.getResponses();
-				for (int i = 0; i < responses.length; i++) {
-					Item item = responses[i];
-					SearchResponse response = item.getResponse();
+        // Send the query to the server
+        try {
+            if (searchRequestBuilders.size() == elasticSearchCarrier.getServerRequests().size()) {
+                MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
+                for (SearchRequestBuilder srb : searchRequestBuilders)
+                    multiSearch.add(srb);
+                log.debug("Issueing {} search request as a multi search", searchRequestBuilders.size());
+                MultiSearchResponse multiSearchResponse = multiSearch.execute().actionGet();
+                Item[] responses = multiSearchResponse.getResponses();
+                for (int i = 0; i < responses.length; i++) {
+                    Item item = responses[i];
+                    SearchResponse response = item.getResponse();
 
-					log.trace("Response from ElasticSearch: {}", response);
+                    log.trace("Response from ElasticSearch: {}", response);
 
-					ElasticServerResponse serverRsp = new ElasticServerResponse(response, client);
+                    ElasticServerResponse serverRsp = new ElasticServerResponse(response, client);
 
-					if (null == response) {
-						serverRsp.setQueryError(QueryError.NO_RESPONSE);
-						serverRsp.setQueryErrorMessage(item.getFailureMessage());
+                    if (null == response) {
+                        serverRsp.setQueryError(QueryError.NO_RESPONSE);
+                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
 
-					}
-					elasticSearchCarrier.addSearchServerResponse(serverRsp);
-				}
-			} else {
-				throw new IllegalStateException(
-						"There is at least one server request for which on ElasticSearch query could be created. This shouldn't happen.");
-			}
-			if (!suggestionBuilders.isEmpty()) {
-				for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
-					SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-					elasticSearchCarrier.addSearchServerResponse(new ElasticServerResponse(suggestResponse, client));
-				}
-			}
-			w.stop();
-			log.debug("ElasticSearch process took {}ms ({}s)", w.getTime(), w.getTime() / 1000);
-		} catch (NoNodeAvailableException e) {
-			log.error("No ElasticSearch node available: {}", e.getMessage());
-			ElasticServerResponse serverRsp = new ElasticServerResponse();
-			serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
-			serverRsp.setQueryErrorMessage(e.getMessage());
-			elasticSearchCarrier.addSearchServerResponse(serverRsp);
-			// SemedicoSearchResult errorResult = new
-			// SemedicoSearchResult(elasticSearchCarrier.searchCmd.semedicoQuery);
-			// errorResult.errorMessage = "The search infrastructure currently
-			// undergoes maintenance, please try again later."
-			// + " If this error persists, please inform us about the issue."
-			// + " We apologize for the inconvenience.";
-			// elasticSearchCarrier.searchResult = errorResult;
-			return true;
-		}
+                    }
+                    elasticSearchCarrier.addSearchServerResponse(serverRsp);
+                }
+            } else {
+                throw new IllegalStateException(
+                        "There is at least one server request for which on ElasticSearch query could be created. This shouldn't happen.");
+            }
+            if (!suggestionBuilders.isEmpty()) {
+                for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
+                    SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
+                    elasticSearchCarrier.addSearchServerResponse(new ElasticServerResponse(suggestResponse, client));
+                }
+            }
+            w.stop();
+            log.debug("ElasticSearch process took {}ms ({}s)", w.getTime(), w.getTime() / 1000);
+        } catch (NoNodeAvailableException e) {
+            log.error("No ElasticSearch node available: {}", e.getMessage());
+            ElasticServerResponse serverRsp = new ElasticServerResponse();
+            serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
+            serverRsp.setQueryErrorMessage(e.getMessage());
+            elasticSearchCarrier.addSearchServerResponse(serverRsp);
+            // SemedicoSearchResult errorResult = new
+            // SemedicoSearchResult(elasticSearchCarrier.searchCmd.semedicoQuery);
+            // errorResult.errorMessage = "The search infrastructure currently
+            // undergoes maintenance, please try again later."
+            // + " If this error persists, please inform us about the issue."
+            // + " We apologize for the inconvenience.";
+            // elasticSearchCarrier.searchResult = errorResult;
+            return true;
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerRequest serverCmd) {
-		SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
-				SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
-		SearchRequestBuilder suggestionRequestBuilder = client.prepareSearch(serverCmd.index).suggest(suggestBuilder);
+    protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerRequest serverCmd) {
+        SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
+                SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
+        SearchRequestBuilder suggestionRequestBuilder = client.prepareSearch(serverCmd.index).suggest(suggestBuilder);
 
-		suggestBuilders.add(suggestionRequestBuilder);
-		if (log.isDebugEnabled())
-			log.debug("Suggesting on index {}. Created search query \"{}\".", serverCmd.index,
-					suggestBuilder.toString());
-	}
+        suggestBuilders.add(suggestionRequestBuilder);
+        if (log.isDebugEnabled())
+            log.debug("Suggesting on index {}. Created search query \"{}\".", serverCmd.index,
+                    suggestBuilder.toString());
+    }
 
-	protected void handleSearchRequest(List<SearchRequestBuilder> searchRequestBuilders,
-			SearchServerRequest serverCmd) {
-		if (null == serverCmd.fieldsToReturn)
-			serverCmd.addField("*");
+    protected void handleSearchRequest(List<SearchRequestBuilder> searchRequestBuilders,
+                                       SearchServerRequest serverCmd) {
+        if (null == serverCmd.fieldsToReturn)
+            serverCmd.addField("*");
 
-		if (serverCmd.index == null)
-			throw new IllegalArgumentException("The search command does not define an index to search on.");
-		SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
-		if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
-			srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
+        if (serverCmd.index == null)
+            throw new IllegalArgumentException("The search command does not define an index to search on.");
+        SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
+        if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
+            srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
 
-		log.trace("Searching on index {} and types {}", serverCmd.index, serverCmd.indexTypes);
+        log.trace("Searching on index {} and types {}", serverCmd.index, serverCmd.indexTypes);
 
-		srb.setFetchSource(serverCmd.fetchSource);
-		// srb.setExplain(true);
+        srb.setFetchSource(serverCmd.fetchSource);
+        // srb.setExplain(true);
 
-		if (serverCmd.downloadCompleteResults)
-			// TODO use scan!
-			srb.setScroll(TimeValue.timeValueMinutes(5));
-		
-		QueryBuilder queryBuilder = buildQuery(serverCmd.query);
-		srb.setQuery(queryBuilder);
+        if (serverCmd.downloadCompleteResults)
+            srb.setScroll(TimeValue.timeValueMinutes(5));
 
-		if (null != serverCmd.fieldsToReturn)
-			for (String field : serverCmd.fieldsToReturn) {
-				srb.addStoredField(field);
-			}
+        QueryBuilder queryBuilder = buildQuery(serverCmd.query);
+        srb.setQuery(queryBuilder);
 
-		srb.setFrom(serverCmd.start);
-		if (serverCmd.rows >= 0)
-			srb.setSize(serverCmd.rows);
-		else
-			srb.setSize(0);
+        if (null != serverCmd.fieldsToReturn)
+            for (String field : serverCmd.fieldsToReturn) {
+                srb.addStoredField(field);
+            }
 
-		if (null != serverCmd.aggregationRequests) {
-			for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
-				log.debug("Adding top aggregation command {} to query.", aggCmd.name);
-				AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
-				srb.addAggregation(aggregationBuilder);
-			}
-		}
+        srb.setFrom(serverCmd.start);
+        if (serverCmd.rows >= 0)
+            srb.setSize(serverCmd.rows);
+        else
+            srb.setSize(0);
 
-		if (null != serverCmd.hlCmds && serverCmd.hlCmds.size() > 0) {
-			HighlightBuilder hb = new HighlightBuilder();
-			srb.highlighter(hb);
-			for (int j = 0; j < serverCmd.hlCmds.size(); j++) {
-				HighlightCommand hlc = serverCmd.hlCmds.get(j);
-				for (HlField hlField : hlc.fields) {
-					Field field = new Field(hlField.field);
-					int fragsize = DEFAULT_FRAGSIZE;
-					int fragnum = DEFAULT_NUMBER_FRAGS;
-					if (hlField.type != null)
-						field.highlighterType(hlField.type);
-					if (!hlField.requirefieldmatch)
-						field.requireFieldMatch(false);
-					if (hlField.fragsize != Integer.MIN_VALUE)
-						fragsize = hlField.fragsize;
-					if (hlField.fragnum != Integer.MIN_VALUE)
-						fragnum = hlField.fragnum;
-					if (hlField.noMatchSize != Integer.MIN_VALUE)
-						field.noMatchSize(hlField.noMatchSize);
-					field.fragmentSize(fragsize);
-					field.numOfFragments(fragnum);
-					if (null != hlField.highlightQuery) {
-						field.highlightQuery(buildQuery(hlField.highlightQuery));
-					}
-					// preTags.add(hlc.pre);
-					// postTags.add(hlc.post);
-					if (null != hlField.pre)
-						field.preTags(hlField.pre);
-					if (null != hlField.post)
-						field.postTags(hlField.post);
-					hb.field(field);
-				}
-			}
-			// srb.setHighlighterPreTags(preTags.toArray(new
-			// String[preTags.size()]));
-			// srb.setHighlighterPostTags(postTags.toArray(new
-			// String[postTags.size()]));
-		}
+        if (null != serverCmd.aggregationRequests) {
+            for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
+                log.debug("Adding top aggregation command {} to query.", aggCmd.name);
+                AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
+                srb.addAggregation(aggregationBuilder);
+            }
+        }
 
-		if (null != serverCmd.sortCmds) {
-			for (SortCommand sortCmd : serverCmd.sortCmds) {
-				SortOrder sort;
-				switch (sortCmd.order) {
-				case ASCENDING:
-					sort = SortOrder.ASC;
-					break;
-				case DESCENDING:
-					sort = SortOrder.DESC;
-					break;
-				default:
-					throw new IllegalArgumentException("Unknown sort order: " + sortCmd.order);
-				}
-				srb.addSort(sortCmd.field, sort);
-			}
-		}
+        if (null != serverCmd.hlCmds && serverCmd.hlCmds.size() > 0) {
+            HighlightBuilder hb = new HighlightBuilder();
+            srb.highlighter(hb);
+            for (int j = 0; j < serverCmd.hlCmds.size(); j++) {
+                HighlightCommand hlc = serverCmd.hlCmds.get(j);
+                for (HlField hlField : hlc.fields) {
+                    Field field = new Field(hlField.field);
+                    int fragsize = DEFAULT_FRAGSIZE;
+                    int fragnum = DEFAULT_NUMBER_FRAGS;
+                    if (hlField.type != null)
+                        field.highlighterType(hlField.type);
+                    if (!hlField.requirefieldmatch)
+                        field.requireFieldMatch(false);
+                    if (hlField.fragsize != Integer.MIN_VALUE)
+                        fragsize = hlField.fragsize;
+                    if (hlField.fragnum != Integer.MIN_VALUE)
+                        fragnum = hlField.fragnum;
+                    if (hlField.noMatchSize != Integer.MIN_VALUE)
+                        field.noMatchSize(hlField.noMatchSize);
+                    field.fragmentSize(fragsize);
+                    field.numOfFragments(fragnum);
+                    if (null != hlField.highlightQuery) {
+                        field.highlightQuery(buildQuery(hlField.highlightQuery));
+                    }
+                    // preTags.add(hlc.pre);
+                    // postTags.add(hlc.post);
+                    if (null != hlField.pre)
+                        field.preTags(hlField.pre);
+                    if (null != hlField.post)
+                        field.postTags(hlField.post);
+                    hb.field(field);
+                }
+            }
+            // srb.setHighlighterPreTags(preTags.toArray(new
+            // String[preTags.size()]));
+            // srb.setHighlighterPostTags(postTags.toArray(new
+            // String[postTags.size()]));
+        }
 
-		if (null != serverCmd.postFilterQuery) {
-			QueryBuilder postFilter = buildQuery(serverCmd.postFilterQuery);
-			srb.setPostFilter(postFilter);
-		}
+        if (null != serverCmd.sortCmds) {
+            for (SortCommand sortCmd : serverCmd.sortCmds) {
+                SortOrder sort;
+                switch (sortCmd.order) {
+                    case ASCENDING:
+                        sort = SortOrder.ASC;
+                        break;
+                    case DESCENDING:
+                        sort = SortOrder.DESC;
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unknown sort order: " + sortCmd.order);
+                }
+                srb.addSort(sortCmd.field, sort);
+            }
+        }
 
-		searchRequestBuilders.add(srb);
+        if (null != serverCmd.postFilterQuery) {
+            QueryBuilder postFilter = buildQuery(serverCmd.postFilterQuery);
+            srb.setPostFilter(postFilter);
+        }
 
-		log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, srb.toString());
-	}
+        searchRequestBuilders.add(srb);
 
-	protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {
-		if (TermsAggregation.class.equals(aggCmd.getClass())) {
-			TermsAggregation termsAgg = (TermsAggregation) aggCmd;
+        log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, srb.toString());
+    }
 
-			TermsAggregationBuilder termsBuilder = AggregationBuilders.terms(termsAgg.name).field(termsAgg.field);
-			List<Terms.Order> compoundOrder = new ArrayList<>();
-			for (OrderCommand orderCmd : termsAgg.order) {
-				Terms.Order order = null;
-				boolean ascending = false;
-				if (null != orderCmd && null != orderCmd.sortOrder)
-					ascending = orderCmd.sortOrder == OrderCommand.SortOrder.ASCENDING;
-				if (null != orderCmd) {
-					switch (orderCmd.referenceType) {
-					case AGGREGATION_MULTIVALUE:
-						order = Terms.Order.aggregation(orderCmd.referenceName, orderCmd.metric.name(), ascending);
-						break;
-					case AGGREGATION_SINGLE_VALUE:
-						order = Terms.Order.aggregation(orderCmd.referenceName, ascending);
-						break;
-					case COUNT:
-						order = Terms.Order.count(ascending);
-						break;
-					case TERM:
-						order = Terms.Order.term(ascending);
-						break;
-					}
-					if (null != order)
-						compoundOrder.add(order);
-				}
-			}
-			if (!compoundOrder.isEmpty())
-				termsBuilder.order(Terms.Order.compound(compoundOrder));
-			if (null != termsAgg.size)
-				termsBuilder.size(termsAgg.size);
+    protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {
+        if (TermsAggregation.class.equals(aggCmd.getClass())) {
+            TermsAggregation termsAgg = (TermsAggregation) aggCmd;
 
-			{
-				// manage the in- or exclusion of terms into the aggregation
-				String includeRegex = null;
-				String excludeRegex = null;
-				SortedSet<BytesRef> includeTerms = null;
-				SortedSet<BytesRef> excludeTerms = null;
-				if (termsAgg.include != null) {
-					if (termsAgg.include instanceof String) {
-						includeRegex = (String) termsAgg.include;
-					} else if (termsAgg.include.getClass().isArray()) {
-						includeTerms = new TreeSet<>();
-						for (int i = 0; i < Array.getLength(termsAgg.include); ++i) {
-							includeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.include, i))));
-						}
-					} else {
-						includeTerms = new TreeSet<>();
-						for (Iterator<?> it = ((Collection<?>) termsAgg.include).iterator(); it.hasNext();) {
-							includeTerms.add(new BytesRef(String.valueOf(it.next())));
-						}
-					}
-				}
-				if (termsAgg.exclude != null) {
-					if (termsAgg.exclude instanceof String) {
-						excludeRegex = (String) termsAgg.exclude;
-					} else if (termsAgg.exclude.getClass().isArray()) {
-						excludeTerms = new TreeSet<>();
-						for (int i = 0; i < Array.getLength(termsAgg.exclude); ++i) {
-							excludeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.exclude, i))));
-						}
-					} else {
-						excludeTerms = new TreeSet<>();
-						for (Iterator<?> it = ((Collection<?>) termsAgg.exclude).iterator(); it.hasNext();) {
-							excludeTerms.add(new BytesRef(String.valueOf(it.next())));
-						}
-					}
-				}
-				IncludeExclude includeExclude = null;
-				if (includeRegex != null || excludeRegex != null)
-					includeExclude = new IncludeExclude(includeRegex, excludeRegex);
-				else if ((includeTerms != null && !includeTerms.isEmpty())
-						|| (excludeTerms != null && !excludeTerms.isEmpty()))
-					includeExclude = new IncludeExclude(includeTerms, excludeTerms);
+            TermsAggregationBuilder termsBuilder = AggregationBuilders.terms(termsAgg.name).field(termsAgg.field);
+            List<Terms.Order> compoundOrder = new ArrayList<>();
+            for (OrderCommand orderCmd : termsAgg.order) {
+                Terms.Order order = null;
+                boolean ascending = false;
+                if (null != orderCmd && null != orderCmd.sortOrder)
+                    ascending = orderCmd.sortOrder == OrderCommand.SortOrder.ASCENDING;
+                if (null != orderCmd) {
+                    switch (orderCmd.referenceType) {
+                        case AGGREGATION_MULTIVALUE:
+                            order = Terms.Order.aggregation(orderCmd.referenceName, orderCmd.metric.name(), ascending);
+                            break;
+                        case AGGREGATION_SINGLE_VALUE:
+                            order = Terms.Order.aggregation(orderCmd.referenceName, ascending);
+                            break;
+                        case COUNT:
+                            order = Terms.Order.count(ascending);
+                            break;
+                        case TERM:
+                            order = Terms.Order.term(ascending);
+                            break;
+                    }
+                    if (null != order)
+                        compoundOrder.add(order);
+                }
+            }
+            if (!compoundOrder.isEmpty())
+                termsBuilder.order(Terms.Order.compound(compoundOrder));
+            if (null != termsAgg.size)
+                termsBuilder.size(termsAgg.size);
 
-				if (includeExclude != null)
-					termsBuilder.includeExclude(includeExclude);
-				// End inclusion / exclusion of aggregation terms
-			}
+            {
+                // manage the in- or exclusion of terms into the aggregation
+                String includeRegex = null;
+                String excludeRegex = null;
+                SortedSet<BytesRef> includeTerms = null;
+                SortedSet<BytesRef> excludeTerms = null;
+                if (termsAgg.include != null) {
+                    if (termsAgg.include instanceof String) {
+                        includeRegex = (String) termsAgg.include;
+                    } else if (termsAgg.include.getClass().isArray()) {
+                        includeTerms = new TreeSet<>();
+                        for (int i = 0; i < Array.getLength(termsAgg.include); ++i) {
+                            includeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.include, i))));
+                        }
+                    } else {
+                        includeTerms = new TreeSet<>();
+                        for (Iterator<?> it = ((Collection<?>) termsAgg.include).iterator(); it.hasNext(); ) {
+                            includeTerms.add(new BytesRef(String.valueOf(it.next())));
+                        }
+                    }
+                }
+                if (termsAgg.exclude != null) {
+                    if (termsAgg.exclude instanceof String) {
+                        excludeRegex = (String) termsAgg.exclude;
+                    } else if (termsAgg.exclude.getClass().isArray()) {
+                        excludeTerms = new TreeSet<>();
+                        for (int i = 0; i < Array.getLength(termsAgg.exclude); ++i) {
+                            excludeTerms.add(new BytesRef(String.valueOf(Array.get(termsAgg.exclude, i))));
+                        }
+                    } else {
+                        excludeTerms = new TreeSet<>();
+                        for (Iterator<?> it = ((Collection<?>) termsAgg.exclude).iterator(); it.hasNext(); ) {
+                            excludeTerms.add(new BytesRef(String.valueOf(it.next())));
+                        }
+                    }
+                }
+                IncludeExclude includeExclude = null;
+                if (includeRegex != null || excludeRegex != null)
+                    includeExclude = new IncludeExclude(includeRegex, excludeRegex);
+                else if ((includeTerms != null && !includeTerms.isEmpty())
+                        || (excludeTerms != null && !excludeTerms.isEmpty()))
+                    includeExclude = new IncludeExclude(includeTerms, excludeTerms);
 
-			// Add sub aggregations
-			if (null != termsAgg.subaggregations) {
-				for (AggregationRequest subAggCmd : termsAgg.subaggregations.values()) {
-					termsBuilder.subAggregation(buildAggregation(subAggCmd));
-				}
-			}
-			return termsBuilder;
-		}
-		if (MaxAggregation.class.equals(aggCmd.getClass())) {
-			MaxAggregation maxAgg = (MaxAggregation) aggCmd;
-			MaxAggregationBuilder maxBuilder = AggregationBuilders.max(maxAgg.name);
-			if (null != maxAgg.field)
-				maxBuilder.field(maxAgg.field);
-			if (null != maxAgg.script)
-				maxBuilder.script(
-						new Script(ScriptType.INLINE, maxAgg.scriptLang.name(), maxAgg.script, Collections.emptyMap()));
-			return maxBuilder;
-		}
-		if (TopHitsAggregation.class.equals(aggCmd.getClass())) {
-			TopHitsAggregation topHitsAgg = (TopHitsAggregation) aggCmd;
-			TopHitsAggregationBuilder topHitsBuilder = AggregationBuilders.topHits(topHitsAgg.name);
-			String[] includes = null;
-			if (null != topHitsAgg.includeFields)
-				includes = topHitsAgg.includeFields.toArray(new String[topHitsAgg.includeFields.size()]);
-			String[] excludes = null;
-			if (null != topHitsAgg.excludeFields)
-				excludes = topHitsAgg.excludeFields.toArray(new String[topHitsAgg.excludeFields.size()]);
-			if (null != includes || null != excludes)
-				topHitsBuilder.fetchSource(includes, excludes);
-			if (topHitsAgg.size != null)
-				topHitsBuilder.size(topHitsAgg.size);
-			return topHitsBuilder;
-		}
-		if (SignificantTermsAggregation.class.equals(aggCmd.getClass())) {
-			SignificantTermsAggregation sigAgg = (SignificantTermsAggregation) aggCmd;
-			SignificantTermsAggregationBuilder esSigAgg = AggregationBuilders.significantTerms(sigAgg.name);
-			esSigAgg.field(sigAgg.field);
-			return esSigAgg;
-		}
-		log.error("Unhandled aggregation command class: {}", aggCmd.getClass());
-		return null;
-	}
+                if (includeExclude != null)
+                    termsBuilder.includeExclude(includeExclude);
+                // End inclusion / exclusion of aggregation terms
+            }
 
-	protected QueryBuilder buildQuery(SearchServerQuery searchServerQuery) {
-		if (null == searchServerQuery)
-			throw new IllegalArgumentException("The search server query is null");
-		QueryBuilder queryBuilder = null;
-		if (LuceneSyntaxQuery.class.equals(searchServerQuery.getClass())) {
-			LuceneSyntaxQuery luceneSyntaxQuery = (LuceneSyntaxQuery) searchServerQuery;
-			queryBuilder = buildQueryStringQuery(luceneSyntaxQuery);
-		} else if (MultiMatchQuery.class.equals(searchServerQuery.getClass())) {
-			MultiMatchQuery query = (MultiMatchQuery) searchServerQuery;
-			queryBuilder = buildMultiMatchQuery(query);
-		} else if (MatchQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildMatchQuery((MatchQuery) searchServerQuery);
-		} else if (MatchAllQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = new MatchAllQueryBuilder();
-		} else if (BoolQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildBoolQuery((BoolQuery) searchServerQuery);
-		} else if (TermQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildTermQuery((TermQuery) searchServerQuery);
-		} else if (NestedQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildNestedQuery((NestedQuery) searchServerQuery);
-		} else if (FunctionScoreQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildFunctionScoreQuery((FunctionScoreQuery) searchServerQuery);
-		} else if (ConstantScoreQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildConstantScoreQuery((ConstantScoreQuery) searchServerQuery);
-		} else if (MatchPhraseQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildMatchPhraseQuery((MatchPhraseQuery) searchServerQuery);
-		} else if (TermsQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildTermsQuery((TermsQuery) searchServerQuery);
-		} else if (WildcardQuery.class.equals(searchServerQuery.getClass())) {
-			queryBuilder = buildWildcardQuery((WildcardQuery) searchServerQuery);
-		} else {
-			throw new IllegalArgumentException("Unhandled query type: " + searchServerQuery.getClass());
-		}
-		return queryBuilder;
-	}
+            // Add sub aggregations
+            if (null != termsAgg.subaggregations) {
+                for (AggregationRequest subAggCmd : termsAgg.subaggregations.values()) {
+                    termsBuilder.subAggregation(buildAggregation(subAggCmd));
+                }
+            }
+            return termsBuilder;
+        }
+        if (MaxAggregation.class.equals(aggCmd.getClass())) {
+            MaxAggregation maxAgg = (MaxAggregation) aggCmd;
+            MaxAggregationBuilder maxBuilder = AggregationBuilders.max(maxAgg.name);
+            if (null != maxAgg.field)
+                maxBuilder.field(maxAgg.field);
+            if (null != maxAgg.script)
+                maxBuilder.script(
+                        new Script(ScriptType.INLINE, maxAgg.scriptLang.name(), maxAgg.script, Collections.emptyMap()));
+            return maxBuilder;
+        }
+        if (TopHitsAggregation.class.equals(aggCmd.getClass())) {
+            TopHitsAggregation topHitsAgg = (TopHitsAggregation) aggCmd;
+            TopHitsAggregationBuilder topHitsBuilder = AggregationBuilders.topHits(topHitsAgg.name);
+            String[] includes = null;
+            if (null != topHitsAgg.includeFields)
+                includes = topHitsAgg.includeFields.toArray(new String[0]);
+            String[] excludes = null;
+            if (null != topHitsAgg.excludeFields)
+                excludes = topHitsAgg.excludeFields.toArray(new String[0]);
+            if (null != includes || null != excludes)
+                topHitsBuilder.fetchSource(includes, excludes);
+            if (topHitsAgg.size != null)
+                topHitsBuilder.size(topHitsAgg.size);
+            return topHitsBuilder;
+        }
+        if (SignificantTermsAggregation.class.equals(aggCmd.getClass())) {
+            SignificantTermsAggregation sigAgg = (SignificantTermsAggregation) aggCmd;
+            SignificantTermsAggregationBuilder esSigAgg = AggregationBuilders.significantTerms(sigAgg.name);
+            esSigAgg.field(sigAgg.field);
+            return esSigAgg;
+        }
+        log.error("Unhandled aggregation command class: {}", aggCmd.getClass());
+        return null;
+    }
 
-	private QueryBuilder buildWildcardQuery(WildcardQuery wildcardQuery) {
-		WildcardQueryBuilder esWildcardQuery = QueryBuilders.wildcardQuery(wildcardQuery.field, wildcardQuery.query);
-		if (wildcardQuery.boost != 1f)
-			esWildcardQuery.boost(wildcardQuery.boost);
-		return esWildcardQuery;
-	}
+    protected QueryBuilder buildQuery(SearchServerQuery searchServerQuery) {
+        if (null == searchServerQuery)
+            throw new IllegalArgumentException("The search server query is null");
+        QueryBuilder queryBuilder = null;
+        if (LuceneSyntaxQuery.class.equals(searchServerQuery.getClass())) {
+            LuceneSyntaxQuery luceneSyntaxQuery = (LuceneSyntaxQuery) searchServerQuery;
+            queryBuilder = buildQueryStringQuery(luceneSyntaxQuery);
+        } else if (MultiMatchQuery.class.equals(searchServerQuery.getClass())) {
+            MultiMatchQuery query = (MultiMatchQuery) searchServerQuery;
+            queryBuilder = buildMultiMatchQuery(query);
+        } else if (MatchQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildMatchQuery((MatchQuery) searchServerQuery);
+        } else if (MatchAllQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = new MatchAllQueryBuilder();
+        } else if (BoolQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildBoolQuery((BoolQuery) searchServerQuery);
+        } else if (TermQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildTermQuery((TermQuery) searchServerQuery);
+        } else if (NestedQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildNestedQuery((NestedQuery) searchServerQuery);
+        } else if (FunctionScoreQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildFunctionScoreQuery((FunctionScoreQuery) searchServerQuery);
+        } else if (ConstantScoreQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildConstantScoreQuery((ConstantScoreQuery) searchServerQuery);
+        } else if (MatchPhraseQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildMatchPhraseQuery((MatchPhraseQuery) searchServerQuery);
+        } else if (TermsQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildTermsQuery((TermsQuery) searchServerQuery);
+        } else if (WildcardQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildWildcardQuery((WildcardQuery) searchServerQuery);
+        } else {
+            throw new IllegalArgumentException("Unhandled query type: " + searchServerQuery.getClass());
+        }
+        return queryBuilder;
+    }
 
-	private QueryBuilder buildTermsQuery(TermsQuery termsQuery) {
-		TermsQueryBuilder esTermsQueryBuilder = QueryBuilders.termsQuery(termsQuery.field, termsQuery.terms);
-		if (termsQuery.boost != 1f)
-			esTermsQueryBuilder.boost(termsQuery.boost);
-		return esTermsQueryBuilder;
-	}
+    private QueryBuilder buildWildcardQuery(WildcardQuery wildcardQuery) {
+        WildcardQueryBuilder esWildcardQuery = QueryBuilders.wildcardQuery(wildcardQuery.field, wildcardQuery.query);
+        if (wildcardQuery.boost != 1f)
+            esWildcardQuery.boost(wildcardQuery.boost);
+        return esWildcardQuery;
+    }
 
-	private QueryBuilder buildMatchPhraseQuery(MatchPhraseQuery matchPhraseQuery) {
-		MatchPhraseQueryBuilder builder = QueryBuilders.matchPhraseQuery(matchPhraseQuery.field,
-				matchPhraseQuery.phrase);
-		builder.slop(matchPhraseQuery.slop);
-		if (matchPhraseQuery.boost != 1f)
-			builder.boost(matchPhraseQuery.boost);
-		return builder;
-	}
+    private QueryBuilder buildTermsQuery(TermsQuery termsQuery) {
+        TermsQueryBuilder esTermsQueryBuilder = QueryBuilders.termsQuery(termsQuery.field, termsQuery.terms);
+        if (termsQuery.boost != 1f)
+            esTermsQueryBuilder.boost(termsQuery.boost);
+        return esTermsQueryBuilder;
+    }
 
-	private QueryBuilder buildConstantScoreQuery(ConstantScoreQuery constantScoreQuery) {
-		ConstantScoreQueryBuilder esConstantScoreQuery = QueryBuilders
-				.constantScoreQuery(buildQuery(constantScoreQuery.query));
-		esConstantScoreQuery.boost(constantScoreQuery.boost);
-		return esConstantScoreQuery;
-	}
+    private QueryBuilder buildMatchPhraseQuery(MatchPhraseQuery matchPhraseQuery) {
+        MatchPhraseQueryBuilder builder = QueryBuilders.matchPhraseQuery(matchPhraseQuery.field,
+                matchPhraseQuery.phrase);
+        builder.slop(matchPhraseQuery.slop);
+        if (matchPhraseQuery.boost != 1f)
+            builder.boost(matchPhraseQuery.boost);
+        return builder;
+    }
 
-	private QueryBuilder buildFunctionScoreQuery(FunctionScoreQuery functionScoreQuery) {
-		SearchServerQuery scoredQuery = functionScoreQuery.query;
-		FieldValueFactor fieldValueFactor = functionScoreQuery.fieldValueFactor;
-		BoostMode boostMode = functionScoreQuery.boostMode;
-		float boost = functionScoreQuery.boost;
-		if (null == scoredQuery)
-			throw new IllegalArgumentException("Currently, only a single query for FunctionScoreQuery is supported");
-		if (null == fieldValueFactor)
-			throw new IllegalArgumentException(
-					"Currently, only the fieldValueFactor function is supported for FunctionScoreQuery, but the fieldValueFactor was null.");
-		QueryBuilder esScoredQuery = buildQuery(scoredQuery);
-		FieldValueFactorFunctionBuilder esFieldValueFactor = ScoreFunctionBuilders
-				.fieldValueFactorFunction(fieldValueFactor.field);
-		FieldValueFactorFunction.Modifier esModifier = FieldValueFactorFunction.Modifier
-				.valueOf(fieldValueFactor.modifier.name());
+    private QueryBuilder buildConstantScoreQuery(ConstantScoreQuery constantScoreQuery) {
+        ConstantScoreQueryBuilder esConstantScoreQuery = QueryBuilders
+                .constantScoreQuery(buildQuery(constantScoreQuery.query));
+        esConstantScoreQuery.boost(constantScoreQuery.boost);
+        return esConstantScoreQuery;
+    }
 
-		esFieldValueFactor.factor(fieldValueFactor.factor);
-		esFieldValueFactor.modifier(esModifier);
-		esFieldValueFactor.missing(fieldValueFactor.missing);
+    private QueryBuilder buildFunctionScoreQuery(FunctionScoreQuery functionScoreQuery) {
+        SearchServerQuery scoredQuery = functionScoreQuery.query;
+        FieldValueFactor fieldValueFactor = functionScoreQuery.fieldValueFactor;
+        BoostMode boostMode = functionScoreQuery.boostMode;
+        float boost = functionScoreQuery.boost;
+        if (null == scoredQuery)
+            throw new IllegalArgumentException("Currently, only a single query for FunctionScoreQuery is supported");
+        if (null == fieldValueFactor)
+            throw new IllegalArgumentException(
+                    "Currently, only the fieldValueFactor function is supported for FunctionScoreQuery, but the fieldValueFactor was null.");
+        QueryBuilder esScoredQuery = buildQuery(scoredQuery);
+        FieldValueFactorFunctionBuilder esFieldValueFactor = ScoreFunctionBuilders
+                .fieldValueFactorFunction(fieldValueFactor.field);
+        FieldValueFactorFunction.Modifier esModifier = FieldValueFactorFunction.Modifier
+                .valueOf(fieldValueFactor.modifier.name());
 
-		FunctionScoreQueryBuilder esFunctionScoreQuery = QueryBuilders.functionScoreQuery(esScoredQuery,
-				esFieldValueFactor);
-		esFunctionScoreQuery.boost(boost);
-		esFunctionScoreQuery.boostMode(CombineFunction.fromString(boostMode.name()));
+        esFieldValueFactor.factor(fieldValueFactor.factor);
+        esFieldValueFactor.modifier(esModifier);
+        esFieldValueFactor.missing(fieldValueFactor.missing);
 
-		return esFunctionScoreQuery;
-	}
+        FunctionScoreQueryBuilder esFunctionScoreQuery = QueryBuilders.functionScoreQuery(esScoredQuery,
+                esFieldValueFactor);
+        esFunctionScoreQuery.boost(boost);
+        esFunctionScoreQuery.boostMode(CombineFunction.fromString(boostMode.name()));
 
-	private QueryBuilder buildNestedQuery(NestedQuery nestedQuery) {
-		QueryBuilder esQuery = buildQuery(nestedQuery.query);
-		NestedQueryBuilder nestedEsQuery = QueryBuilders.nestedQuery(nestedQuery.path, esQuery,
-				ScoreMode.valueOf(StringUtils.capitalize(nestedQuery.scoreMode.name())));
-		if (null != nestedQuery.innerHits) {
-			InnerHitBuilder innerHitBuilder = new InnerHitBuilder();
-			if (nestedQuery.innerHits.fetchSource)
-				innerHitBuilder.setFetchSourceContext(FetchSourceContext.FETCH_SOURCE);
-			else
-				innerHitBuilder.setFetchSourceContext(FetchSourceContext.DO_NOT_FETCH_SOURCE);
-			innerHitBuilder.setStoredFieldNames(nestedQuery.innerHits.fields);
-			if (nestedQuery.innerHits.highlight != null) {
-				HighlightBuilder hb = new HighlightBuilder();
-				innerHitBuilder.setHighlightBuilder(hb);
-				HighlightCommand innerHl = nestedQuery.innerHits.highlight;
-				for (HlField hlField : innerHl.fields) {
-					Field esHlField = new Field(hlField.field);
-					esHlField.fragmentSize(hlField.fragsize);
-					esHlField.numOfFragments(hlField.fragnum);
-					if (null != hlField.pre)
-						esHlField.preTags(hlField.pre);
-					if (null != hlField.post)
-						esHlField.postTags(hlField.post);
-					hb.field(esHlField);
-				}
-			}
-			if (nestedQuery.innerHits.explain)
-				innerHitBuilder.setExplain(nestedQuery.innerHits.explain);
-			if (null != nestedQuery.innerHits.size)
-				innerHitBuilder.setSize(nestedQuery.innerHits.size);
-			nestedEsQuery.innerHit(innerHitBuilder, true);
-		}
-		return nestedEsQuery;
-	}
+        return esFunctionScoreQuery;
+    }
 
-	private QueryBuilder buildMatchQuery(MatchQuery matchQuery) {
-		MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder(matchQuery.field, matchQuery.query);
-		switch (matchQuery.operator) {
-		case "or":
-		case "OR":
-			matchQueryBuilder.operator(Operator.OR);
-			break;
-		case "and":
-		case "AND":
-			matchQueryBuilder.operator(Operator.AND);
-			break;
-		}
-		if (null != matchQuery.analyzer)
-			matchQueryBuilder.analyzer(matchQuery.analyzer);
-		if (matchQuery.boost != 1f)
-			matchQueryBuilder.boost(matchQuery.boost);
-		return matchQueryBuilder;
-	}
+    private QueryBuilder buildNestedQuery(NestedQuery nestedQuery) {
+        QueryBuilder esQuery = buildQuery(nestedQuery.query);
+        NestedQueryBuilder nestedEsQuery = QueryBuilders.nestedQuery(nestedQuery.path, esQuery,
+                ScoreMode.valueOf(StringUtils.capitalize(nestedQuery.scoreMode.name())));
+        if (null != nestedQuery.innerHits) {
+            InnerHitBuilder innerHitBuilder = new InnerHitBuilder();
+            if (nestedQuery.innerHits.fetchSource)
+                innerHitBuilder.setFetchSourceContext(FetchSourceContext.FETCH_SOURCE);
+            else
+                innerHitBuilder.setFetchSourceContext(FetchSourceContext.DO_NOT_FETCH_SOURCE);
+            innerHitBuilder.setStoredFieldNames(nestedQuery.innerHits.fields);
+            if (nestedQuery.innerHits.highlight != null) {
+                HighlightBuilder hb = new HighlightBuilder();
+                innerHitBuilder.setHighlightBuilder(hb);
+                HighlightCommand innerHl = nestedQuery.innerHits.highlight;
+                for (HlField hlField : innerHl.fields) {
+                    Field esHlField = new Field(hlField.field);
+                    esHlField.fragmentSize(hlField.fragsize);
+                    esHlField.numOfFragments(hlField.fragnum);
+                    if (null != hlField.pre)
+                        esHlField.preTags(hlField.pre);
+                    if (null != hlField.post)
+                        esHlField.postTags(hlField.post);
+                    hb.field(esHlField);
+                }
+            }
+            innerHitBuilder.setExplain(nestedQuery.innerHits.explain);
+            if (null != nestedQuery.innerHits.size)
+                innerHitBuilder.setSize(nestedQuery.innerHits.size);
+            nestedEsQuery.innerHit(innerHitBuilder, true);
+        }
+        return nestedEsQuery;
+    }
 
-	protected QueryBuilder buildQueryStringQuery(LuceneSyntaxQuery luceneSyntaxQuery) {
-		QueryBuilder queryBuilder;
-		String queryString;
-		queryString = luceneSyntaxQuery.query;
-		// No fields given, so we assume a query string in Lucene syntax
-		QueryStringQueryBuilder queryStringQueryBuilder = QueryBuilders.queryStringQuery(queryString);
+    private QueryBuilder buildMatchQuery(MatchQuery matchQuery) {
+        MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder(matchQuery.field, matchQuery.query);
+        switch (matchQuery.operator) {
+            case "or":
+            case "OR":
+                matchQueryBuilder.operator(Operator.OR);
+                break;
+            case "and":
+            case "AND":
+                matchQueryBuilder.operator(Operator.AND);
+                break;
+        }
+        if (null != matchQuery.analyzer)
+            matchQueryBuilder.analyzer(matchQuery.analyzer);
+        if (matchQuery.boost != 1f)
+            matchQueryBuilder.boost(matchQuery.boost);
+        return matchQueryBuilder;
+    }
 
-		if (null != luceneSyntaxQuery && null != luceneSyntaxQuery.analyzer)
-			queryStringQueryBuilder.analyzer(luceneSyntaxQuery.analyzer);
-		queryBuilder = queryStringQueryBuilder;
-		return queryBuilder;
-	}
+    protected QueryBuilder buildQueryStringQuery(LuceneSyntaxQuery luceneSyntaxQuery) {
+        QueryBuilder queryBuilder;
+        String queryString;
+        queryString = luceneSyntaxQuery.query;
+        // No fields given, so we assume a query string in Lucene syntax
+        QueryStringQueryBuilder queryStringQueryBuilder = QueryBuilders.queryStringQuery(queryString);
 
-	protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
-		log.trace("Building query string query.");
-		MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
-		for (int i = 0; i < query.fields.size(); i++) {
-			String field = query.fields.get(i);
-			Float weight = null;
-			if (null != query.fieldWeights) {
-				weight = query.fieldWeights.get(i);
-				multiMatchQueryBuilder.field(field, weight);
-			} else {
-				multiMatchQueryBuilder.field(field);
-			}
-			if (null != query.type) {
-				MultiMatchQueryBuilder.Type multiFieldMatchType = null;
-				switch (query.type) {
-				case best_fields:
-					multiFieldMatchType = Type.BEST_FIELDS;
-					break;
-				case cross_fields:
-					multiFieldMatchType = Type.CROSS_FIELDS;
-					break;
-				case most_fields:
-					multiFieldMatchType = Type.MOST_FIELDS;
-					break;
-				case phrase:
-					multiFieldMatchType = Type.PHRASE;
-					break;
-				case phrase_prefix:
-					multiFieldMatchType = Type.PHRASE_PREFIX;
-					break;
-				}
-				multiMatchQueryBuilder.type(multiFieldMatchType);
-			}
-		}
-		return multiMatchQueryBuilder;
-	}
+        if (null != luceneSyntaxQuery.analyzer)
+            queryStringQueryBuilder.analyzer(luceneSyntaxQuery.analyzer);
+        queryBuilder = queryStringQueryBuilder;
+        return queryBuilder;
+    }
 
-	private BoolQueryBuilder buildBoolQuery(BoolQuery query) {
-		BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder();
-		if (query.clauses == null || query.clauses.isEmpty())
-			throw new IllegalStateException("A BoolQuery without any query clauses was given.");
-		for (BoolClause clause : query.clauses) {
-			if (clause.occur == null)
-				throw new IllegalStateException("Encountered boolean query clause without a set \"occur\" property.");
-			for (SearchServerQuery searchServerQuery : clause.queries) {
-				QueryBuilder clauseQuery = buildQuery(searchServerQuery);
-				if (clauseQuery == null)
-					continue;
-				switch (clause.occur) {
-				case MUST:
-					boolQueryBuilder.must(clauseQuery);
-					break;
-				case SHOULD:
-					boolQueryBuilder.should(clauseQuery);
-					break;
-				case MUST_NOT:
-					boolQueryBuilder.mustNot(clauseQuery);
-					break;
-				case FILTER:
-					boolQueryBuilder.filter(clauseQuery);
-					break;
-				}
-			}
-		}
-		if (query.boost != 1f)
-			boolQueryBuilder.boost(query.boost);
-		if (!StringUtils.isBlank(query.minimumShouldMatch))
-			boolQueryBuilder.minimumShouldMatch(query.minimumShouldMatch);
-		return boolQueryBuilder;
-	}
+    protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
+        log.trace("Building query string query.");
+        MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
+        for (int i = 0; i < query.fields.size(); i++) {
+            String field = query.fields.get(i);
+            Float weight;
+            if (null != query.fieldWeights) {
+                weight = query.fieldWeights.get(i);
+                multiMatchQueryBuilder.field(field, weight);
+            } else {
+                multiMatchQueryBuilder.field(field);
+            }
+            if (null != query.type) {
+                MultiMatchQueryBuilder.Type multiFieldMatchType = null;
+                switch (query.type) {
+                    case best_fields:
+                        multiFieldMatchType = Type.BEST_FIELDS;
+                        break;
+                    case cross_fields:
+                        multiFieldMatchType = Type.CROSS_FIELDS;
+                        break;
+                    case most_fields:
+                        multiFieldMatchType = Type.MOST_FIELDS;
+                        break;
+                    case phrase:
+                        multiFieldMatchType = Type.PHRASE;
+                        break;
+                    case phrase_prefix:
+                        multiFieldMatchType = Type.PHRASE_PREFIX;
+                        break;
+                }
+                multiMatchQueryBuilder.type(multiFieldMatchType);
+            }
+        }
+        return multiMatchQueryBuilder;
+    }
 
-	public TermQueryBuilder buildTermQuery(TermQuery query) {
-		TermQueryBuilder termQueryBuilder = new TermQueryBuilder(query.field, query.term);
-		return termQueryBuilder;
-	}
+    private BoolQueryBuilder buildBoolQuery(BoolQuery query) {
+        BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder();
+        if (query.clauses == null || query.clauses.isEmpty())
+            throw new IllegalStateException("A BoolQuery without any query clauses was given.");
+        for (BoolClause clause : query.clauses) {
+            if (clause.occur == null)
+                throw new IllegalStateException("Encountered boolean query clause without a set \"occur\" property.");
+            for (SearchServerQuery searchServerQuery : clause.queries) {
+                QueryBuilder clauseQuery = buildQuery(searchServerQuery);
+                if (clauseQuery == null)
+                    continue;
+                switch (clause.occur) {
+                    case MUST:
+                        boolQueryBuilder.must(clauseQuery);
+                        break;
+                    case SHOULD:
+                        boolQueryBuilder.should(clauseQuery);
+                        break;
+                    case MUST_NOT:
+                        boolQueryBuilder.mustNot(clauseQuery);
+                        break;
+                    case FILTER:
+                        boolQueryBuilder.filter(clauseQuery);
+                        break;
+                }
+            }
+        }
+        if (query.boost != 1f)
+            boolQueryBuilder.boost(query.boost);
+        if (!StringUtils.isBlank(query.minimumShouldMatch))
+            boolQueryBuilder.minimumShouldMatch(query.minimumShouldMatch);
+        return boolQueryBuilder;
+    }
+
+    public TermQueryBuilder buildTermQuery(TermQuery query) {
+        TermQueryBuilder termQueryBuilder = new TermQueryBuilder(query.field, query.term);
+        return termQueryBuilder;
+    }
 }

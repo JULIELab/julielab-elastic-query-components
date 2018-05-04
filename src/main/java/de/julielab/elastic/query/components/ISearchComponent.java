@@ -19,13 +19,12 @@
 package de.julielab.elastic.query.components;
 
 import de.julielab.elastic.query.components.data.SearchCarrier;
-import de.julielab.elastic.query.services.ISearchServerResponse;
 
 /**
  * @author faessler
  * 
  */
-public interface ISearchComponent {
-	public <R extends ISearchServerResponse> boolean process(SearchCarrier<R> elasticSearchCarrier);
+public interface ISearchComponent<C extends SearchCarrier> {
+	boolean process(C elasticSearchCarrier);
 
 }
