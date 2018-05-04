@@ -18,26 +18,35 @@
  */
 package de.julielab.elastic.query.components.data;
 
+import de.julielab.elastic.query.services.IElasticServerResponse;
+
 import java.util.ArrayList;
 import java.util.List;
 
-import de.julielab.elastic.query.services.ISearchServerResponse;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.StopWatch;
-
-import de.julielab.elastic.query.services.IElasticServerResponse;
-
 /**
  * @author faessler
- *
  */
-public class ElasticSearchCarrier extends SearchCarrier<IElasticServerResponse> {
+public class ElasticSearchCarrier<R extends IElasticServerResponse> extends SearchCarrier<R> {
 
-    public List<SearchServerRequest> serverRequests;
+    protected List<SearchServerRequest> serverRequests;
 
     public ElasticSearchCarrier(String chainName) {
         super(chainName);
         serverRequests = new ArrayList<>();
+    }
+
+    public List<SearchServerRequest> getServerRequests() {
+        return serverRequests;
+    }
+
+    public void setServerRequests(List<SearchServerRequest> serverRequests) {
+        this.serverRequests = serverRequests;
+    }
+
+    public void addServerRequest(SearchServerRequest serverRequest) {
+        if (serverRequests == null)
+            serverRequests = new ArrayList<>();
+        serverRequests.add(serverRequest);
     }
 
     public void addSearchServerRequest(SearchServerRequest serverCmd) {
@@ -63,11 +72,11 @@ public class ElasticSearchCarrier extends SearchCarrier<IElasticServerResponse> 
     }
 
     public IElasticServerResponse getSingleSearchServerResponse() {
-        if (serverResponses.size() > 1)
-            throw new IllegalStateException("There are " + serverResponses.size()
+        if (searchResponses.size() > 1)
+            throw new IllegalStateException("There are " + searchResponses.size()
                     + " search server responses instead of exactly one.");
-        else if (serverResponses.size() > 0)
-            return serverResponses.get(0);
+        else if (!searchResponses.isEmpty())
+            return searchResponses.get(0);
         return null;
     }
 

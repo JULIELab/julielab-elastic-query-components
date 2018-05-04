@@ -109,7 +109,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		ElasticSearchCarrier elasticSearchCarrier = castCarrier(searchCarrier);
 		StopWatch w = new StopWatch();
 		w.start();
-		List<SearchServerRequest> serverRequests = elasticSearchCarrier.serverRequests;
+		List<SearchServerRequest> serverRequests = elasticSearchCarrier.getServerRequests();
 		checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
 		checkNotEmpty(serverRequests, "Server requests");
 		stopIfError();
@@ -117,7 +117,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 		// It could be that the search component occurs multiple times in a
 		// search chain. But then, the last response(s) should have been
 		// consumed by now.
-		elasticSearchCarrier.serverResponses.clear();
+		elasticSearchCarrier.clearSearchResponses();
 
 		// One "Semedico search" may result in multiple search server commands,
 		// e.g. suggestions where for each facet suggestions are searched or for
@@ -147,7 +147,7 @@ public class ElasticSearchComponent extends AbstractSearchComponent implements I
 
 		// Send the query to the server
 		try {
-			if (searchRequestBuilders.size() == elasticSearchCarrier.serverRequests.size()) {
+			if (searchRequestBuilders.size() == elasticSearchCarrier.getServerRequests().size()) {
 				MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
 				for (SearchRequestBuilder srb : searchRequestBuilders)
 					multiSearch.add(srb);

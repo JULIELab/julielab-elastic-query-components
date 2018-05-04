@@ -123,7 +123,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 	@Override
 	public <R extends ISearchServerResponse> boolean process(SearchCarrier<R> elasticSearchCarrier) {
 		errorMessages.clear();
-		elasticSearchCarrier.enteredComponents.add(getClass().getSimpleName());
+		elasticSearchCarrier.addEnteredComponent(getClass().getSimpleName());
 		try {
 			componentChainLogger.debug("Now calling search component \"{}\"", getClass().getSimpleName());
 			boolean terminateChain = processSearch(elasticSearchCarrier);
@@ -132,7 +132,7 @@ public abstract class AbstractSearchComponent implements ISearchComponent {
 		} catch (Exception e) {
 			log.error(
 					"An exception has occurred in component {}. The visited sequence of components until this point was: {}",
-					getClass().getSimpleName(), elasticSearchCarrier.enteredComponents);
+					getClass().getSimpleName(), elasticSearchCarrier.getEnteredComponents());
 			throw e;
 		}
 	}
