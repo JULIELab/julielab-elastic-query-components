@@ -39,6 +39,10 @@ public class ElasticSearchCarrier<R extends IElasticServerResponse> extends Sear
         return serverRequests;
     }
 
+    public SearchServerRequest getServerRequest(int index) {
+        return serverRequests.get(index);
+    }
+
     public void setServerRequests(List<SearchServerRequest> serverRequests) {
         this.serverRequests = serverRequests;
     }

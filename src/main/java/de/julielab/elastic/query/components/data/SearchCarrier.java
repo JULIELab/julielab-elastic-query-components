@@ -30,6 +30,10 @@ public class SearchCarrier<R extends ISearchServerResponse> {
         this.searchResponses = searchResponses;
     }
 
+    public R getSearchResponse(int index) {
+        return searchResponses.get(index);
+    }
+
     public void addSearchResponse(R searchResponse) {
         if (searchResponses == null)
             searchResponses = new ArrayList<>();
@@ -50,6 +54,10 @@ public class SearchCarrier<R extends ISearchServerResponse> {
 
     public void setEnteredComponents(List<String> enteredComponents) {
         this.enteredComponents = enteredComponents;
+    }
+
+    public String getEnteredComponent(int index) {
+        return enteredComponents.get(index);
     }
 
     public void addEnteredComponent(String enteredComponent) {
