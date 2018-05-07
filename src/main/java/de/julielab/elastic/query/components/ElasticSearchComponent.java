@@ -7,7 +7,9 @@ import de.julielab.elastic.query.components.data.aggregation.AggregationRequest.
 import de.julielab.elastic.query.components.data.query.*;
 import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.BoostMode;
 import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.FieldValueFactor;
+import de.julielab.elastic.query.services.IElasticServerResponse;
 import de.julielab.elastic.query.services.ISearchClientProvider;
+import de.julielab.elastic.query.services.ISearchServerResponse;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
@@ -49,7 +51,7 @@ import java.lang.reflect.Array;
 import java.util.*;
 import java.util.function.Supplier;
 
-public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSearchComponent<C> implements ISearchServerComponent<C> {
+public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServerResponse>> extends AbstractSearchComponent<C> implements ISearchServerComponent<C> {
 
     // The following highlighting-defaults are taken from
     // http://www.elasticsearch.org/guide/reference/api/search/highlighting/
@@ -67,8 +69,7 @@ public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSea
     }
 
     @Override
-    public boolean processSearch(SearchCarrier searchCarrier) {
-        ElasticSearchCarrier elasticSearchCarrier = castCarrier(searchCarrier);
+    public boolean processSearch(C elasticSearchCarrier) {
         StopWatch w = new StopWatch();
         w.start();
         List<SearchServerRequest> serverRequests = elasticSearchCarrier.getServerRequests();
@@ -129,7 +130,7 @@ public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSea
                         serverRsp.setQueryErrorMessage(item.getFailureMessage());
 
                     }
-                    elasticSearchCarrier.addSearchServerResponse(serverRsp);
+                    elasticSearchCarrier.addSearchResponse(serverRsp);
                 }
             } else {
                 throw new IllegalStateException(
@@ -138,7 +139,7 @@ public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSea
             if (!suggestionBuilders.isEmpty()) {
                 for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
                     SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-                    elasticSearchCarrier.addSearchServerResponse(new ElasticServerResponse(suggestResponse, client));
+                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, client));
                 }
             }
             w.stop();
@@ -148,7 +149,7 @@ public class ElasticSearchComponent<C extends SearchCarrier> extends AbstractSea
             ElasticServerResponse serverRsp = new ElasticServerResponse();
             serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
             serverRsp.setQueryErrorMessage(e.getMessage());
-            elasticSearchCarrier.addSearchServerResponse(serverRsp);
+            elasticSearchCarrier.addSearchResponse(serverRsp);
             // SemedicoSearchResult errorResult = new
             // SemedicoSearchResult(elasticSearchCarrier.searchCmd.semedicoQuery);
             // errorResult.errorMessage = "The search infrastructure currently

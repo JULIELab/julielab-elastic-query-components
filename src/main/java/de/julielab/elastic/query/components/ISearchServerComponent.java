@@ -10,6 +10,6 @@ import de.julielab.elastic.query.services.ISearchServerResponse;
  * @author faessler
  * 
  */
-public interface ISearchServerComponent<C extends SearchCarrier> extends ISearchComponent<C> {
+public interface ISearchServerComponent<C extends SearchCarrier<? extends ISearchServerResponse>> extends ISearchComponent<C> {
 	String REVIEW_TERM = "Review";
 }

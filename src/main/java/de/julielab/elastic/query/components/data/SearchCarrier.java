@@ -35,8 +35,6 @@ public class SearchCarrier<R extends ISearchServerResponse> {
     }
 
     public void addSearchResponse(R searchResponse) {
-        if (searchResponses == null)
-            searchResponses = new ArrayList<>();
         searchResponses.add(searchResponse);
     }
 
@@ -72,10 +70,6 @@ public class SearchCarrier<R extends ISearchServerResponse> {
 
     public void setErrorMessages(List<String> errorMessages) {
         this.errorMessages = errorMessages;
-    }
-
-    public void addSearchServerResponse(R serverRsp) {
-        searchResponses.add(serverRsp);
     }
 
     public void setElapsedTime() {
