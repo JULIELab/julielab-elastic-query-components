@@ -150,13 +150,6 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             serverRsp.setQueryError(QueryError.NO_NODE_AVAILABLE);
             serverRsp.setQueryErrorMessage(e.getMessage());
             elasticSearchCarrier.addSearchResponse(serverRsp);
-            // SemedicoSearchResult errorResult = new
-            // SemedicoSearchResult(elasticSearchCarrier.searchCmd.semedicoQuery);
-            // errorResult.errorMessage = "The search infrastructure currently
-            // undergoes maintenance, please try again later."
-            // + " If this error persists, please inform us about the issue."
-            // + " We apologize for the inconvenience.";
-            // elasticSearchCarrier.searchResult = errorResult;
             return true;
         }
 
@@ -211,7 +204,8 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
                 log.debug("Adding top aggregation command {} to query.", aggCmd.name);
                 AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
-                srb.addAggregation(aggregationBuilder);
+                if (aggregationBuilder != null)
+                    srb.addAggregation(aggregationBuilder);
             }
         }
 
@@ -282,6 +276,8 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     }
 
     protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {
+        if (NoOpAggregation.class.equals(aggCmd.getClass()))
+            return null;
         if (TermsAggregation.class.equals(aggCmd.getClass())) {
             TermsAggregation termsAgg = (TermsAggregation) aggCmd;
 

@@ -16,13 +16,14 @@ import de.julielab.elastic.query.components.data.SearchServerRequest;
  * Aggregations can be nested, so this class serves as a common super type for aggregation commands to allow flexible,
  * general nesting.
  * </p>
- * 
- * @see http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations.html
- * 
+ *
  * @author faessler
- * 
+ * @see http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations.html
  */
 public abstract class AggregationRequest {
+
+	public static final AggregationRequest NOOP = new NoOpAggregation();
+
 	/**
 	 * The name of this aggregation to identify it in the results.
 	 */
@@ -47,9 +48,8 @@ public abstract class AggregationRequest {
 	public static class OrderCommand {
 		/**
 		 * Enumeration constants to determine whether to sort ascending or descending by <tt>reference</tt>.
-		 * 
+		 *
 		 * @author faessler
-		 * 
 		 */
 		public enum SortOrder {
 			DESCENDING, ASCENDING
@@ -69,6 +69,7 @@ public abstract class AggregationRequest {
 
 		/**
 		 * The way of ordering. May just be the count of each term, its name or even another value given by a subaggregation.
+		 *
 		 * @see ReferenceType
 		 */
 		public ReferenceType referenceType;
