@@ -51,6 +51,8 @@ import java.lang.reflect.Array;
 import java.util.*;
 import java.util.function.Supplier;
 
+import static org.elasticsearch.index.query.SimpleQueryStringFlag.*;
+
 public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServerResponse>> extends AbstractSearchComponent<C> implements ISearchServerComponent<C> {
 
     // The following highlighting-defaults are taken from
@@ -433,10 +435,85 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             queryBuilder = buildTermsQuery((TermsQuery) searchServerQuery);
         } else if (WildcardQuery.class.equals(searchServerQuery.getClass())) {
             queryBuilder = buildWildcardQuery((WildcardQuery) searchServerQuery);
-        } else {
+        } else if (SimpleQueryStringQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildSimpleQueryStringQuery((SimpleQueryStringQuery) searchServerQuery);
+        }
+        else {
             throw new IllegalArgumentException("Unhandled query type: " + searchServerQuery.getClass());
         }
         return queryBuilder;
+    }
+
+    private QueryBuilder buildSimpleQueryStringQuery(SimpleQueryStringQuery simpleQueryStringQuery) {
+        final SimpleQueryStringBuilder builder = QueryBuilders.simpleQueryStringQuery(simpleQueryStringQuery.query);
+        if (simpleQueryStringQuery.fields != null && simpleQueryStringQuery.fieldBoosts != null && simpleQueryStringQuery.fields.size() != simpleQueryStringQuery.fieldBoosts.size() && !simpleQueryStringQuery.fieldBoosts.isEmpty())
+            throw new IllegalArgumentException("For the SimpleQueryStringQuery either each field must be given a boost via the fieldBoosts field or no boost must be given at all. However, there are " + simpleQueryStringQuery.fields.size() + " fields given and " + simpleQueryStringQuery.fieldBoosts.size() + " field boosts.");
+        for (int i = 0; i < simpleQueryStringQuery.fields.size(); i++) {
+            float boost = 1f;
+            if (simpleQueryStringQuery.fieldBoosts != null && !simpleQueryStringQuery.fieldBoosts.isEmpty())
+                boost = simpleQueryStringQuery.fieldBoosts.get(i);
+            builder.field(simpleQueryStringQuery.fields.get(i), boost);
+        }
+        if (simpleQueryStringQuery.defaultOperator != null) {
+            builder.defaultOperator(Operator.valueOf(simpleQueryStringQuery.defaultOperator.name()));
+        }
+        builder.analyzer(simpleQueryStringQuery.analyzer);
+        if (simpleQueryStringQuery.flags != null) {
+            SimpleQueryStringFlag[] esFlags = new SimpleQueryStringFlag[simpleQueryStringQuery.flags.size()];
+            for (int i = 0; i < simpleQueryStringQuery.flags.size(); i++) {
+                SimpleQueryStringFlag esFlag;
+                switch (simpleQueryStringQuery.flags.get(i)) {
+                    case ALL:
+                        esFlag = ALL;
+                        break;
+                    case NONE:
+                        esFlag = NONE;
+                        break;
+                    case AND:
+                        esFlag = AND;
+                        break;
+                    case NOT:
+                        esFlag = NOT;
+                        break;
+                    case OR:
+                        esFlag = OR;
+                        break;
+                    case PREFIX:
+                        esFlag = PREFIX;
+                        break;
+                    case PHRASE:
+                        esFlag = PREFIX;
+                        break;
+                    case PRECEDENCE:
+                        esFlag = PRECEDENCE;
+                        break;
+                    case ESCAPE:
+                        esFlag = ESCAPE;
+                        break;
+                    case WHITESPACE:
+                        esFlag = WHITESPACE;
+                        break;
+                    case FUZZY:
+                        esFlag = FUZZY;
+                        break;
+                    case NEAR:
+                        esFlag = NEAR;
+                        break;
+                    case SLOP:
+                        esFlag = SLOP;
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unknown flag for the SimpleQueryStringQuery: " + simpleQueryStringQuery.flags.get(i));
+                }
+                esFlags[i] = esFlag;
+            }
+            builder.flags(esFlags);
+        }
+        builder.analyzeWildcard(simpleQueryStringQuery.analyzeWildcard);
+        builder.lenient(simpleQueryStringQuery.lenient);
+        builder.minimumShouldMatch(simpleQueryStringQuery.minimumShouldMatch);
+        builder.quoteFieldSuffix(simpleQueryStringQuery.quoteFieldSuffix);
+        return builder;
     }
 
     private QueryBuilder buildWildcardQuery(WildcardQuery wildcardQuery) {
