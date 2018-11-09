@@ -6,4 +6,8 @@ package de.julielab.elastic.query.components.data.aggregation;
  * but cannot always do so, depending on its input. Then, it might just return an instance of this class.
  */
 public class NoOpAggregation extends AggregationRequest {
+    @Override
+    public AggregationRequest clone() throws CloneNotSupportedException {
+        return super.clone();
+    }
 }

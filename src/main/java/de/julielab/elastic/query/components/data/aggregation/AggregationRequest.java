@@ -2,6 +2,7 @@ package de.julielab.elastic.query.components.data.aggregation;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import de.julielab.elastic.query.components.data.SearchServerRequest;
 
@@ -18,9 +19,9 @@ import de.julielab.elastic.query.components.data.SearchServerRequest;
  * </p>
  *
  * @author faessler
- * @see http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations.html
+ * @see <url>http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations.html</url>
  */
-public abstract class AggregationRequest {
+public abstract class AggregationRequest implements Cloneable {
 
 	public static final AggregationRequest NOOP = new NoOpAggregation();
 
@@ -32,6 +33,15 @@ public abstract class AggregationRequest {
 	 * A list of sub-aggregations of this aggregation. May be <tt>null</tt>.
 	 */
 	public Map<String, AggregationRequest> subaggregations;
+
+	@Override
+	public AggregationRequest clone() throws CloneNotSupportedException {
+		AggregationRequest clone = (AggregationRequest) super.clone();
+		clone.subaggregations = new HashMap<>();
+		for (String key : subaggregations.keySet())
+			clone.subaggregations.put(key, subaggregations.get(key).clone());
+		return clone;
+	}
 
 	public void addSubaggregation(AggregationRequest aggregation) {
 		if (null == subaggregations)

@@ -3,13 +3,12 @@ package de.julielab.elastic.query.components.data.aggregation;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * The terms aggregation is basically faceting on term level.
  * 
- * @see http
- *      ://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation
- *      .html
+ * @see <a href="http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html">http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html</a>
  * @author faessler
  * 
  */
@@ -31,7 +30,7 @@ public class TermsAggregation extends AggregationRequest {
 	public Object include;
 	/**
 	 * Either a string that will be interpreted as a regular expression matching
-	 * terms to exclude or an instance of {@link #Collection} or an array containing field values (of type String, Long or Double)
+	 * terms to exclude or an instance of {@link Collection} or an array containing field values (of type String, Long or Double)
 	 * exactly enumerating the excluded items.
 	 */
 	public Object exclude;
@@ -40,7 +39,16 @@ public class TermsAggregation extends AggregationRequest {
 	 */
 	public Integer size;
 
-	public void addOrder(OrderCommand orderItem) {
+    @Override
+    public TermsAggregation clone() throws CloneNotSupportedException {
+        TermsAggregation clone = (TermsAggregation) super.clone();
+        clone.order = order.stream().collect(Collectors.toList());
+        clone.include = include instanceof String ? include : ((Collection) include).stream().collect(Collectors.toList());
+        clone.exclude = exclude instanceof String ? exclude : ((Collection) exclude).stream().collect(Collectors.toList());
+        return clone;
+    }
+
+    public void addOrder(OrderCommand orderItem) {
 		if (null == order)
 			order = new ArrayList<>();
 		order.add(orderItem);
