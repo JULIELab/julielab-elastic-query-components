@@ -37,7 +37,7 @@ public abstract class AggregationRequest implements Cloneable {
 	@Override
 	public AggregationRequest clone() throws CloneNotSupportedException {
 		AggregationRequest clone = (AggregationRequest) super.clone();
-		clone.subaggregations = new HashMap<>();
+		clone.subaggregations = new HashMap<>(subaggregations.size());
 		for (String key : subaggregations.keySet())
 			clone.subaggregations.put(key, subaggregations.get(key).clone());
 		return clone;

@@ -7,8 +7,8 @@ import de.julielab.elastic.query.components.ISearchServerComponent;
 
 public class ElasticQueryComponentsModule {
 	public static void bind(ServiceBinder binder) {
-		binder.bind(ISearchClientProvider.class, ElasticSearchClientProvider.class);
-		binder.bind(ISearchServerComponent.class, ElasticSearchComponent.class);
-		binder.bind(IIndexingService.class, ElasticSearchIndexingService.class);
+		binder.bind(ISearchClientProvider.class, ElasticSearchClientProvider.class).withSimpleId();
+		binder.bind(ISearchServerComponent.class, ElasticSearchComponent.class).withSimpleId();
+		binder.bind(IIndexingService.class, ElasticSearchIndexingService.class).withSimpleId();
 	}
 }
