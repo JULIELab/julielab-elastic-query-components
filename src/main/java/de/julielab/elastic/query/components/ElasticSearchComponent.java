@@ -624,6 +624,11 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             matchQueryBuilder.analyzer(matchQuery.analyzer);
         if (matchQuery.boost != 1f)
             matchQueryBuilder.boost(matchQuery.boost);
+        if (!StringUtils.isBlank(matchQuery.minimumShouldMatch))
+            matchQueryBuilder.minimumShouldMatch(matchQuery.minimumShouldMatch);
+        if (!StringUtils.isBlank(matchQuery.fuzzyRewrite))
+            matchQueryBuilder.fuzzyRewrite(matchQuery.fuzzyRewrite);
+        matchQueryBuilder.fuzzyTranspositions(matchQuery.allowFuzzyTranspositions);
         return matchQueryBuilder;
     }
 

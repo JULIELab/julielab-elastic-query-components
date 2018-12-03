@@ -33,6 +33,13 @@ public class MatchQuery extends SearchServerQuery {
 	 */
 	public String operator = "or";
 	public String analyzer;
+	public String minimumShouldMatch;
+    /**
+     * Determines the allowed Levenshtein Distance: 1, 2, 3 or auto.
+     */
+	public Object fuzziness;
+	public boolean allowFuzzyTranspositions = false;
+	public String fuzzyRewrite;
 
 	@Override
 	public String toString() {
