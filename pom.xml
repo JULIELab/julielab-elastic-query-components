@@ -3,11 +3,11 @@
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>de.julielab</groupId>
-		<version>2.2.0</version>
+		<version>2.3.0</version>
 		<artifactId>julielab-parent</artifactId>
 	</parent>
 	<artifactId>julielab-elastic-query-components</artifactId>
-	<version>1.4.0</version>
+	<version>1.5.0-SNAPSHOT</version>
 	<name>JULIE Lab ElasticSearch Query Components</name>
 	<description>This is a Tapestry 5 project that offers a Tapestry-IoC integrated query layer for an ElasticSearch server.</description>
 	<dependencies>
@@ -24,7 +24,7 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
-			<version>3.4</version>
+			<version>3.9</version>
 		</dependency>
 		<dependency>
 			<groupId>commons-lang</groupId>
@@ -43,11 +43,11 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>18.0</version>
+			<version>28.0-jre</version>
 		</dependency>
 	</dependencies>
 	<properties>
-		<es-version>5.4.0</es-version>
+		<es-version>5.6.14</es-version>
 		<tapestry-version>5.4.4</tapestry-version>
 	</properties>
 </project>

@@ -603,20 +603,19 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             innerHitBuilder.setExplain(nestedQuery.innerHits.explain);
             if (null != nestedQuery.innerHits.size)
                 innerHitBuilder.setSize(nestedQuery.innerHits.size);
-            nestedEsQuery.innerHit(innerHitBuilder, true);
+            innerHitBuilder.setIgnoreUnmapped(true);
+            nestedEsQuery.innerHit(innerHitBuilder);
         }
         return nestedEsQuery;
     }
 
     private QueryBuilder buildMatchQuery(MatchQuery matchQuery) {
         MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder(matchQuery.field, matchQuery.query);
-        switch (matchQuery.operator) {
+        switch (matchQuery.operator.toLowerCase()) {
             case "or":
-            case "OR":
                 matchQueryBuilder.operator(Operator.OR);
                 break;
             case "and":
-            case "AND":
                 matchQueryBuilder.operator(Operator.AND);
                 break;
         }
