@@ -94,7 +94,6 @@ public class SearchServerRequest {
 	 */
 	public Map<String, SearchServerQuery> namedQueries;
 	public SearchServerQuery postFilterQuery;
-	public Collection<String> indexTypes;
 	/**
 	 * Causes the return of all results of the query, not only a page or a
 	 * batch. May require additional requests to the server which are

@@ -1,8 +1,8 @@
 package de.julielab.elastic.query.services;
 
-import org.elasticsearch.client.Client;
+import org.elasticsearch.client.RestHighLevelClient;
 
 public interface ISearchClient {
 	void shutdown();
-	Client getClient();
+	RestHighLevelClient getRestHighLevelClient();
 }

@@ -14,16 +14,18 @@ import de.julielab.elastic.query.services.ISearchClient;
 import de.julielab.elastic.query.services.ISearchClientProvider;
 import de.julielab.elastic.query.services.ElasticSearchClient;
 
+import java.util.Arrays;
+
 public class ElasticSearchClientProvider implements ISearchClientProvider {
 
 	private final Logger log;
 	private ElasticSearchClient elasticSearchServer;
 
 	public ElasticSearchClientProvider(Logger log, LoggerSource loggerSource,
-			@Symbol(ES_CLUSTER_NAME) String clusterName, @Symbol(ES_HOST) String host, @Symbol(ES_PORT) int port) {
+			@Symbol(ES_CLUSTER_NAME) String clusterName, @Symbol(ES_HOST) String host, @Symbol(ES_PORT) String port) {
 		this.log = log;
 		elasticSearchServer = new ElasticSearchClient(
-				loggerSource.getLogger(ElasticSearchClient.class), clusterName, host, port);
+				loggerSource.getLogger(ElasticSearchClient.class), clusterName, host.split(","), Arrays.stream(port.split(",")).mapToInt(Integer::valueOf).toArray());
 	}
 
 	@Override
@@ -40,5 +42,7 @@ public class ElasticSearchClientProvider implements ISearchClientProvider {
 			}
 		});
 	}
-
+public static void main(String args[]) {
+	System.out.println(Arrays.toString("eins".split(",")));
+}
 }

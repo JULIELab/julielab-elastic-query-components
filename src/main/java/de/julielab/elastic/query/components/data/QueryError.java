@@ -13,5 +13,9 @@ public enum QueryError {
 	 * lead to the successful discovery of a cluster. This could just mean that
 	 * the cluster is down.
 	 */
-	NO_NODE_AVAILABLE
+	NO_NODE_AVAILABLE,
+	/**
+	 * Indicates a general error during querying. The exact reasons are to be found in application and/or server logs.
+	 */
+	QUERY_ERROR
 }

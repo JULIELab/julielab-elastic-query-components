@@ -1,26 +1,22 @@
 package de.julielab.elastic.query.components.data;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
-
+import de.julielab.elastic.query.components.data.aggregation.*;
+import de.julielab.elastic.query.services.IElasticServerResponse;
 import org.apache.commons.lang.StringUtils;
+import org.elasticsearch.action.search.ClearScrollRequest;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.action.search.SearchScrollRequest;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.document.DocumentField;
 import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.bucket.significant.SignificantTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
-import org.elasticsearch.search.aggregations.metrics.max.Max;
-import org.elasticsearch.search.aggregations.metrics.tophits.TopHits;
+import org.elasticsearch.search.aggregations.metrics.Max;
+import org.elasticsearch.search.aggregations.metrics.TopHits;
 import org.elasticsearch.search.suggest.Suggest;
 import org.elasticsearch.search.suggest.Suggest.Suggestion;
 import org.elasticsearch.search.suggest.Suggest.Suggestion.Entry.Option;
@@ -28,19 +24,10 @@ import org.elasticsearch.search.suggest.completion.CompletionSuggestion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
-import de.julielab.elastic.query.components.data.aggregation.IAggregationResult;
-import de.julielab.elastic.query.components.data.aggregation.MaxAggregation;
-import de.julielab.elastic.query.components.data.aggregation.MaxAggregationResult;
-import de.julielab.elastic.query.components.data.aggregation.SignificantTermsAggregation;
-import de.julielab.elastic.query.components.data.aggregation.SignificantTermsAggregationResult;
-import de.julielab.elastic.query.components.data.aggregation.SignificantTermsAggregationUnit;
-import de.julielab.elastic.query.components.data.aggregation.TermsAggregation;
-import de.julielab.elastic.query.components.data.aggregation.TermsAggregationResult;
-import de.julielab.elastic.query.components.data.aggregation.TermsAggregationUnit;
-import de.julielab.elastic.query.components.data.aggregation.TopHitsAggregation;
-import de.julielab.elastic.query.components.data.aggregation.TopHitsAggregationResult;
-import de.julielab.elastic.query.services.IElasticServerResponse;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class ElasticServerResponse implements IElasticServerResponse {
 
@@ -53,10 +40,10 @@ public class ElasticServerResponse implements IElasticServerResponse {
     protected Suggest suggest;
     protected Map<String, Aggregation> aggregationsByName;
     protected QueryError queryError;
-    protected Client client;
+    protected RestHighLevelClient client;
     protected String queryErrorMessage;
 
-    public ElasticServerResponse(SearchResponse response, Client client) {
+    public ElasticServerResponse(SearchResponse response, RestHighLevelClient client) {
         this.response = response;
         this.client = client;
         if (response != null) {
@@ -75,7 +62,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
         return response;
     }
 
-    public Client getClient() {
+    public RestHighLevelClient getClient() {
         return client;
     }
 
@@ -152,7 +139,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
             TopHitsAggregationResult topHitsResult = new TopHitsAggregationResult();
             topHitsResult.setName(aggCmd.name);
             TopHits esTopHitsAggregation = (TopHits) aggregation;
-            long totalHits = esTopHitsAggregation.getHits().getTotalHits();
+            long totalHits = esTopHitsAggregation.getHits().getTotalHits().value;
             topHitsResult.setTotalHits(totalHits);
             SearchHits searchHits = esTopHitsAggregation.getHits();
             for (int i = 0; i < searchHits.getHits().length; i++) {
@@ -161,7 +148,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
                 // stored fields back but the _source field
                 // (see ElasticSearch documentation).
                 // final Map<String, Object> source = searchHit.getSource();
-                final Map<String, SearchHitField> source = searchHit.getFields();
+                final Map<String, DocumentField> source = searchHit.getFields();
 
                 ISearchServerDocument serverDoc = new ISearchServerDocument() {
 
@@ -185,11 +172,6 @@ public class ElasticServerResponse implements IElasticServerResponse {
                     @Override
                     public String getId() {
                         return searchHit.getId();
-                    }
-
-                    @Override
-                    public String getIndexType() {
-                        return searchHit.getType();
                     }
 
                     @Override
@@ -220,27 +202,36 @@ public class ElasticServerResponse implements IElasticServerResponse {
 
             @Override
             public boolean hasNext() {
-                if (pos < currentHits.length) {
-                    log.trace("There are more documents in the current response.");
-                    return true;
-                } else if (!StringUtils.isBlank(response.getScrollId())) {
-                    log.debug(
-                            "No more documents present in the current response but got scroll ID {}. Querying next batch.",
-                            response.getScrollId());
-                    SearchResponse scrollResponse = client.prepareSearchScroll(response.getScrollId())
-                            .setScroll(TimeValue.timeValueMinutes(5)).execute().actionGet();
-                    currentHits = scrollResponse.getHits().getHits();
-                    log.trace("Received {} new hits from scroll request.", currentHits.length);
-                    pos = 0;
-                    if (currentHits.length > 0)
+                try {
+                    if (pos < currentHits.length) {
+                        log.trace("There are more documents in the current response.");
                         return true;
+                    } else if (!StringUtils.isBlank(response.getScrollId())) {
+                        log.debug(
+                                "No more documents present in the current response but got scroll ID {}. Querying next batch.",
+                                response.getScrollId());
+                        SearchResponse scrollResponse = client.scroll(new SearchScrollRequest(response.getScrollId()), RequestOptions.DEFAULT);
+                        currentHits = scrollResponse.getHits().getHits();
+                        log.trace("Received {} new hits from scroll request.", currentHits.length);
+                        pos = 0;
+                        if (currentHits.length > 0)
+                            return true;
+                    }
+                } catch (IOException e) {
+                    log.error("Could not retrieve the next batch of documents",e );
                 }
                 log.debug("No more hits returned from scrolling request.");
-                pos = Integer.MAX_VALUE;
-                if (response.getScrollId() != null) {
-                    log.debug("Closing the scroll with ID {}", response.getScrollId());
-                    client.prepareClearScroll().addScrollId(response.getScrollId()).execute();
-                    response.scrollId(null);
+                try {
+                    pos = Integer.MAX_VALUE;
+                    if (response.getScrollId() != null) {
+                        log.debug("Closing the scroll with ID {}", response.getScrollId());
+                        final ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+                        clearScrollRequest.addScrollId(response.getScrollId());
+                        client.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
+                        response.scrollId(null);
+                    }
+                } catch (IOException e) {
+                    log.error("Could not close scroll.", e);
                 }
                 return false;
             }
@@ -251,8 +242,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
                     return null;
                 log.trace("Returning next document at position {} of the current scroll batch.", pos);
                 SearchHit hit = currentHits[pos++];
-                ElasticSearchDocumentHit document = new ElasticSearchDocumentHit(hit);
-                return document;
+                return new ElasticSearchDocumentHit(hit);
             }
 
         };
@@ -266,7 +256,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
         if (searchServerNotReachable)
             return 0;
         if (null != response)
-            return response.getHits().getTotalHits();
+            return response.getHits().getTotalHits().value;
 
         return 0;
     }
@@ -319,7 +309,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
                     @SuppressWarnings("unchecked")
                     @Override
                     public <V> Optional<V> get(String fieldName) {
-                        return Optional.ofNullable((V) getFieldValue(fieldName).get());
+                        return getFieldValue(fieldName);
                     }
 
                     @Override

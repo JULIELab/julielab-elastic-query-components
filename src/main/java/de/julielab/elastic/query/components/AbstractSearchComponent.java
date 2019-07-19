@@ -23,89 +23,9 @@ public abstract class AbstractSearchComponent<C extends SearchCarrier<? extends 
 
     private static final Logger componentChainLogger = LoggerFactory.getLogger("de.julielab.elastic.query.ComponentChain");
     protected Logger log;
-    @Deprecated
-    private BiFunction<Object, String, String> notNull = (o, m) -> o == null ? m + " is null." : null;
-    @Deprecated
-    private BiFunction<Collection<?>, String, String> notEmpty = (o, m) -> o.isEmpty() ? m + " is empty." : null;
-    /**
-     * Error messages for state checks.
-     */
-    @Deprecated
-    private List<String> errorMessages = new ArrayList<>();
 
     public AbstractSearchComponent(Logger log) {
         this.log = log;
-    }
-
-    /**
-     * Checks for null objects and, if found, generates an error message. For
-     * this purpose, the odd-indexed elements must be strings giving a name to
-     * the previous object.
-     *
-     * @param objects A list of pairs where the even-indexed elements are
-     *                {@link Supplier} that provide the object for the null check
-     *                and odd-indexed elements are their names.
-     */
-    @Deprecated
-    protected void checkNotNull(Object... objects) {
-        if (objects.length % 2 == 1)
-            throw new IllegalArgumentException(
-                    "An even number of arguments is required. The even elements are the objects to test for null, the odd arguments are their names.");
-        for (int i = 0; i < objects.length; i++) {
-            Object object = objects[i];
-            if (i % 2 == 1) {
-                if (!(object instanceof CharSequence))
-                    throw new IllegalArgumentException(
-                            "All odd arguments must be names describing the previous object but was of class "
-                                    + object.getClass().getCanonicalName() + ".");
-                String returnMessage = notNull.apply(((Supplier<?>) objects[i - 1]).get(), (String) object);
-                if (returnMessage != null)
-                    errorMessages.add(returnMessage);
-            }
-        }
-    }
-
-    /**
-     * Checks for empty collections and, if found, generates an error message.
-     * For this purpose, the odd-indexed elements must be strings giving a name
-     * to the previous object.
-     *
-     * @param objects A list of pair where the even-indexed elements are collections
-     *                for the empty check and odd-indexed elements are their names.
-     */
-    protected void checkNotEmpty(Object... objects) {
-        if (objects.length % 2 == 1)
-            throw new IllegalArgumentException(
-                    "An even number of arguments is required. The even elements are the objects to test for null, the odd arguments are their names.");
-        for (int i = 0; i < objects.length; i++) {
-            Object object = objects[i];
-            if (i % 2 == 1) {
-                if (!(object instanceof CharSequence))
-                    throw new IllegalArgumentException(
-                            "All odd arguments must be names describing the previous object but was of class "
-                                    + object.getClass().getCanonicalName() + ".");
-                String returnMessage = notEmpty.apply((Collection<?>) objects[i - 1], (String) object);
-                if (returnMessage != null)
-                    errorMessages.add(returnMessage);
-            }
-        }
-    }
-
-    /**
-     * Checks if there are error messages created by
-     * {@link #checkNotNull(Object...)} and
-     * {@link #checkNotEmpty(Object...)} which need to be called before this
-     * method. If there is at least one error message, the message is logged on
-     * the ERROR level and an exception is thrown.
-     *
-     * @throws IllegalArgumentException If there was at least one error.
-     */
-    protected void stopIfError() {
-        if (errorMessages.isEmpty())
-            return;
-        errorMessages.forEach(log::error);
-        throw new IllegalArgumentException("There was at least one failed precondition check for the component "
-                + getClass().getSimpleName() + ". Check the logs above.");
     }
 
     /**
@@ -115,7 +35,6 @@ public abstract class AbstractSearchComponent<C extends SearchCarrier<? extends 
      */
     @Override
     public boolean process(C elasticSearchCarrier) {
-        errorMessages.clear();
         elasticSearchCarrier.addEnteredComponent(getClass().getSimpleName());
         try {
             componentChainLogger.debug("Now calling search component \"{}\"", getClass().getSimpleName());
