@@ -18,4 +18,9 @@ public class TermQuery extends SearchServerQuery {
 	 * The field in which to look for {@link #term}.
 	 */
 	public String field;
+
+	@Override
+	public String toString() {
+		return "TermQuery{'"+field+"':'"+term+"' }";
+	}
 }
