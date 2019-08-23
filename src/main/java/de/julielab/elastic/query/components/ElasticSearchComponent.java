@@ -659,6 +659,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
         log.trace("Building query string query.");
         MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
+        multiMatchQueryBuilder.operator(Operator.valueOf(query.operator.toUpperCase()));
         for (int i = 0; i < query.fields.size(); i++) {
             String field = query.fields.get(i);
             Float weight;
@@ -668,27 +669,27 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             } else {
                 multiMatchQueryBuilder.field(field);
             }
-            if (null != query.type) {
-                MultiMatchQueryBuilder.Type multiFieldMatchType = null;
-                switch (query.type) {
-                    case best_fields:
-                        multiFieldMatchType = Type.BEST_FIELDS;
-                        break;
-                    case cross_fields:
-                        multiFieldMatchType = Type.CROSS_FIELDS;
-                        break;
-                    case most_fields:
-                        multiFieldMatchType = Type.MOST_FIELDS;
-                        break;
-                    case phrase:
-                        multiFieldMatchType = Type.PHRASE;
-                        break;
-                    case phrase_prefix:
-                        multiFieldMatchType = Type.PHRASE_PREFIX;
-                        break;
-                }
-                multiMatchQueryBuilder.type(multiFieldMatchType);
+        }
+        if (null != query.type) {
+            MultiMatchQueryBuilder.Type multiFieldMatchType = null;
+            switch (query.type) {
+                case best_fields:
+                    multiFieldMatchType = Type.BEST_FIELDS;
+                    break;
+                case cross_fields:
+                    multiFieldMatchType = Type.CROSS_FIELDS;
+                    break;
+                case most_fields:
+                    multiFieldMatchType = Type.MOST_FIELDS;
+                    break;
+                case phrase:
+                    multiFieldMatchType = Type.PHRASE;
+                    break;
+                case phrase_prefix:
+                    multiFieldMatchType = Type.PHRASE_PREFIX;
+                    break;
             }
+            multiMatchQueryBuilder.type(multiFieldMatchType);
         }
         return multiMatchQueryBuilder;
     }

@@ -24,6 +24,7 @@ public class ElasticSearchClientProvider implements ISearchClientProvider {
 	public ElasticSearchClientProvider(Logger log, LoggerSource loggerSource,
 			@Symbol(ES_CLUSTER_NAME) String clusterName, @Symbol(ES_HOST) String host, @Symbol(ES_PORT) String port) {
 		this.log = log;
+		log.info("Got symbol values for ElasticSearch connection; {}:{}, {}:{}, {}:{}", ES_HOST, host, ES_PORT, port, ES_CLUSTER_NAME, clusterName);
 		elasticSearchServer = new ElasticSearchClient(
 				loggerSource.getLogger(ElasticSearchClient.class), clusterName, host.split(","), Arrays.stream(port.split(",")).mapToInt(Integer::valueOf).toArray());
 	}
