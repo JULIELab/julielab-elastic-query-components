@@ -657,7 +657,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     }
 
     protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
-        log.trace("Building query string query.");
+        log.trace("Building multi match query (a match query over multiple fields).");
         MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
         multiMatchQueryBuilder.operator(Operator.valueOf(query.operator.toUpperCase()));
         for (int i = 0; i < query.fields.size(); i++) {
