@@ -9,6 +9,7 @@ import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.document.DocumentField;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregation;
@@ -35,6 +36,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
     private static final Logger log = LoggerFactory.getLogger(ElasticServerResponse.class);
 
     protected SearchResponse response;
+    protected SearchResponse scrollResponse;
     protected boolean searchServerNotReachable;
     protected boolean isSuggestionSearchResponse;
     protected Suggest suggest;
@@ -203,22 +205,25 @@ public class ElasticServerResponse implements IElasticServerResponse {
             @Override
             public boolean hasNext() {
                 try {
+                    SearchResponse currentResponse = scrollResponse != null ? scrollResponse : response;
+                    String scrollId = currentResponse.getScrollId() != null ? currentResponse.getScrollId() : response.getScrollId();
                     if (pos < currentHits.length) {
                         log.trace("There are more documents in the current response.");
                         return true;
-                    } else if (!StringUtils.isBlank(response.getScrollId())) {
+                    } else if (!StringUtils.isBlank(scrollId)) {
                         log.debug(
                                 "No more documents present in the current response but got scroll ID {}. Querying next batch.",
-                                response.getScrollId());
-                        SearchResponse scrollResponse = client.scroll(new SearchScrollRequest(response.getScrollId()), RequestOptions.DEFAULT);
-                        currentHits = scrollResponse.getHits().getHits();
+                                scrollId);
+                        SearchResponse sr = client.scroll(new SearchScrollRequest(scrollId).scroll(TimeValue.timeValueMinutes(5)), RequestOptions.DEFAULT);
+                        currentHits = sr.getHits().getHits();
                         log.trace("Received {} new hits from scroll request.", currentHits.length);
                         pos = 0;
+                        scrollResponse = sr;
                         if (currentHits.length > 0)
                             return true;
                     }
                 } catch (IOException e) {
-                    log.error("Could not retrieve the next batch of documents",e );
+                    log.error("Could not retrieve the next batch of documents", e);
                 }
                 log.debug("No more hits returned from scrolling request.");
                 try {

@@ -50,6 +50,7 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.elasticsearch.index.query.SimpleQueryStringFlag.*;
@@ -118,24 +119,34 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         // Send the query to the server
         try {
             if (searchRequests.size() == elasticSearchCarrier.getServerRequests().size()) {
-                final MultiSearchRequest msr = new MultiSearchRequest();
-                for (SearchRequest srb : searchRequests)
-                    msr.add(srb);
+//                final MultiSearchRequest msr = new MultiSearchRequest();
+//                for (SearchRequest srb : searchRequests)
+//                    msr.add(srb);
                 log.debug("Issueing {} search request as a multi search", searchRequests.size());
-                final MultiSearchResponse multiSearchResponse = client.msearch(msr, RequestOptions.DEFAULT);
-                Item[] responses = multiSearchResponse.getResponses();
-                for (int i = 0; i < responses.length; i++) {
-                    Item item = responses[i];
-                    SearchResponse response = item.getResponse();
+//                final MultiSearchResponse multiSearchResponse = client.msearch(msr, RequestOptions.DEFAULT);
+//                Item[] responses = multiSearchResponse.getResponses();
+                List<SearchResponse> responses = new ArrayList<>();
+                for (int i = 0; i < searchRequests.size(); i++) {
+//                    Item item = responses[i];
+//                    SearchResponse response = item.getResponse();
+                    SearchRequest sr = searchRequests.get(i);
+                    ElasticServerResponse serverRsp = null;
+                    try {
+                        SearchResponse response = client.search(sr, RequestOptions.DEFAULT);
 
-                    log.trace("Response from ElasticSearch: {}", response);
+                        log.trace("Response from ElasticSearch: {}", response);
 
-                    ElasticServerResponse serverRsp = new ElasticServerResponse(response, client);
+                        serverRsp = new ElasticServerResponse(response, client);
+                        int status = response.status().getStatus();
+                        if (status > 299 && status < 200) {
+                            serverRsp.setQueryError(QueryError.QUERY_ERROR);
+//                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
+                            serverRsp.setQueryErrorMessage("HTTP status " + status);
 
-                    if (null == response) {
+                        }
+                    } catch (IOException e) {
                         serverRsp.setQueryError(QueryError.NO_RESPONSE);
-                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
-
+                        serverRsp.setQueryErrorMessage(e.getMessage());
                     }
                     elasticSearchCarrier.addSearchResponse(serverRsp);
                 }

@@ -43,7 +43,4 @@ public class ElasticSearchClientProvider implements ISearchClientProvider {
 			}
 		});
 	}
-public static void main(String args[]) {
-	System.out.println(Arrays.toString("eins".split(",")));
-}
 }

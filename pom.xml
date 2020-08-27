@@ -63,6 +63,6 @@
 	</dependencies>
 	<properties>
 		<es-version>7.0.1</es-version>
-		<tapestry-version>5.4.4</tapestry-version>
+		<tapestry-version>5.5.0</tapestry-version>
 	</properties>
 </project>
