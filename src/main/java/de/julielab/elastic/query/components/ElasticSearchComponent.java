@@ -14,8 +14,8 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.action.search.*;
-import org.elasticsearch.action.search.MultiSearchResponse.Item;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
@@ -32,8 +32,8 @@ import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.BucketOrder;
-import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.IncludeExclude;
+import org.elasticsearch.search.aggregations.bucket.terms.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.MaxAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.TopHitsAggregationBuilder;
@@ -50,9 +50,7 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static org.elasticsearch.index.query.SimpleQueryStringFlag.*;
 
 public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServerResponse>> extends AbstractSearchComponent<C> implements ISearchServerComponent<C> {
@@ -259,12 +257,31 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                     if (null != hlField.highlightQuery) {
                         field.highlightQuery(buildQuery(hlField.highlightQuery));
                     }
-                    // preTags.add(hlc.pre);
-                    // postTags.add(hlc.post);
                     if (null != hlField.pre)
                         field.preTags(hlField.pre);
                     if (null != hlField.post)
                         field.postTags(hlField.post);
+                    if (hlField.boundaryChars != null)
+                        field.boundaryChars(hlField.boundaryChars);
+                    if (hlField.boundaryScanner != null)
+                        field.boundaryScannerType(hlField.boundaryScanner);
+                    if (hlField.boundaryMaxScan != null)
+                        field.boundaryMaxScan(hlField.boundaryMaxScan);
+                    if (hlField.boundaryScannerLocale != null)
+                        field.boundaryScannerLocale(hlField.boundaryScannerLocale);
+                    if (hlField.fields != null)
+                        field.matchedFields(hlField.fields);
+                    field.forceSource(hlField.forceSource);
+                    if (hlField.fragmenter != null)
+                        field.fragmenter(hlField.fragmenter);
+                    if (hlField.fragmentOffset != null)
+                        field.fragmentOffset(hlField.fragmentOffset);
+                    if (hlField.matchedFields != null)
+                        field.matchedFields(hlField.matchedFields);
+                    if (hlField.order != null)
+                        field.order(hlField.order);
+                    if (hlField.phraseLimit != null)
+                        field.phraseLimit(hlField.phraseLimit);
                     hb.field(field);
                 }
             }

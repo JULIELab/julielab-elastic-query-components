@@ -13,7 +13,7 @@ import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregation;
-import org.elasticsearch.search.aggregations.bucket.significant.SignificantTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.SignificantTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.aggregations.metrics.Max;
@@ -233,7 +233,6 @@ public class ElasticServerResponse implements IElasticServerResponse {
                         final ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
                         clearScrollRequest.addScrollId(response.getScrollId());
                         client.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
-                        response.scrollId(null);
                     }
                 } catch (IOException e) {
                     log.error("Could not close scroll.", e);
