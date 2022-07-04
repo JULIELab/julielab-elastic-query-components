@@ -74,6 +74,8 @@ public class SearchServerRequest {
 	 */
 	public boolean fetchSource;
 
+	public boolean isCountRequest;
+
 	public Map<String, AggregationRequest> aggregationRequests;
 	public List<HighlightCommand> hlCmds;
 	// TODO should go into semedico as this is not general enough

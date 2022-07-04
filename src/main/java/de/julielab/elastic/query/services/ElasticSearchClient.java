@@ -16,6 +16,8 @@ public class ElasticSearchClient implements ISearchClient {
 	private Logger log;
 
 	public ElasticSearchClient(Logger log, String clusterName, String[] hosts, int[] ports) {
+		if (hosts.length != ports.length)
+			throw new IllegalArgumentException("The number of hosts and ports must be equal.");
 		this.log = log;
 		this.clusterName = clusterName;
 		this.hosts = hosts;

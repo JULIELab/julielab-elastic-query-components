@@ -18,6 +18,8 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.core.CountRequest;
+import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
@@ -127,15 +129,23 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                 for (int i = 0; i < searchRequests.size(); i++) {
 //                    Item item = responses[i];
 //                    SearchResponse response = item.getResponse();
+                        final boolean isCountRequest = serverRequests.get(i).isCountRequest;
                     SearchRequest sr = searchRequests.get(i);
                     ElasticServerResponse serverRsp = null;
                     try {
-                        SearchResponse response = client.search(sr, RequestOptions.DEFAULT);
+                        SearchResponse response = null;
+                        CountResponse countResponse = null;
+                        if (!isCountRequest) {
+                            response = client.search(sr, RequestOptions.DEFAULT);
+                            log.trace("Response from ElasticSearch: {}", response);
+                        }
+                        else {
+                            countResponse = client.count(new CountRequest(sr.indices(), sr.source().query()), RequestOptions.DEFAULT);
+                            log.trace("Response from ElasticSearch: {}", countResponse);
+                        }
 
-                        log.trace("Response from ElasticSearch: {}", response);
-
-                        serverRsp = new ElasticServerResponse(response, client);
-                        int status = response.status().getStatus();
+                        serverRsp = new ElasticServerResponse(response, countResponse, client);
+                        int status = isCountRequest ? countResponse.status().getStatus() : response.status().getStatus();
                         if (status > 299 && status < 200) {
                             serverRsp.setQueryError(QueryError.QUERY_ERROR);
 //                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
@@ -155,7 +165,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             if (!suggestionBuilders.isEmpty()) {
                 for (SearchRequest suggestBuilder : suggestionBuilders) {
                     SearchResponse suggestResponse = client.search(suggestBuilder, RequestOptions.DEFAULT);
-                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, client));
+                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, client));
                 }
             }
             w.stop();
@@ -315,7 +325,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
 
         searchRequestBuilders.add(sr);
 
-        log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, ssb.toString());
+        log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, ssb);
     }
 
     protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {

@@ -1,9 +1,17 @@
 package de.julielab.elastic.query.components;
 
 import de.julielab.elastic.query.ElasticQuerySymbolConstants;
+import de.julielab.elastic.query.components.data.ElasticSearchCarrier;
+import de.julielab.elastic.query.components.data.ElasticServerResponse;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
+import de.julielab.elastic.query.components.data.query.MatchAllQuery;
+import de.julielab.elastic.query.services.ElasticSearchClient;
+import de.julielab.elastic.query.services.ElasticSearchClientProvider;
+import de.julielab.elastic.query.services.IElasticServerResponse;
 import de.julielab.java.utilities.FileUtilities;
 import de.julielab.java.utilities.IOStreamUtilities;
 import org.apache.tapestry5.ioc.RegistryBuilder;
+import org.apache.tapestry5.ioc.internal.LoggerSourceImpl;
 import org.elasticsearch.monitor.fs.FsInfo;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -25,6 +33,7 @@ import java.time.Duration;
 import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class ElasticSearchComponentTest {
@@ -36,11 +45,11 @@ public class ElasticSearchComponentTest {
     public static GenericContainer es = new GenericContainer(
             new ImageFromDockerfile("elasticquerycomponentstest", true)
                     .withFileFromClasspath("Dockerfile", "dockercontext/Dockerfile")
-            //.withFileFromClasspath("elasticsearch-mapper-preanalyzed-5.4.0.zip", "dockercontext/elasticsearch-mapper-preanalyzed-5.4.0.zip")
     )
             .withExposedPorts(9200)
             .withStartupTimeout(Duration.ofMinutes(2))
             .withEnv("cluster.name", TEST_CLUSTER);
+    private static ElasticSearchComponent<ElasticSearchCarrier<IElasticServerResponse>> esSearchComponent;
 
     @BeforeClass
     public static void setup() throws Exception {
@@ -58,8 +67,6 @@ public class ElasticSearchComponentTest {
             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
             urlConnection.setRequestMethod("PUT");
             urlConnection.setRequestProperty("Content-Type", "application/json");
-            //  String auth = Base64.getEncoder().encodeToString(("elastic:changeme").getBytes());
-            // urlConnection.setRequestProperty("Authorization", "Basic " +  auth);
             urlConnection.setDoOutput(true);
             log.info("Response for index creation: {}", urlConnection.getResponseMessage());
 
@@ -72,7 +79,7 @@ public class ElasticSearchComponentTest {
 
 
         {
-            // Index the test documents (created with gepi-indexing-pipeline and the JsonWriter).
+            // Index the test documents
             File dir = new File("src/test/resources/test-documents");
             File[] testDocuments = dir.listFiles((dir1, name) -> name.endsWith("json"));
             log.debug("Reading {} test relation documents for indexing", testDocuments.length);
@@ -109,17 +116,29 @@ public class ElasticSearchComponentTest {
             log.debug("Response for the count of documents: {}", countResponse);
             assertTrue(countResponse.contains("count\":1"));
         }
-//
-//        Properties testconfig = new Properties();
-//        String configPath = "src/test/resources/testconfiguration.properties";
-//        testconfig.load(new FileInputStream(configPath));
-//        testconfig.setProperty(ElasticQuerySymbolConstants.ES_PORT, String.valueOf(es.getMappedPort(9300)));
-//        testconfig.setProperty(ElasticQuerySymbolConstants.ES_CLUSTER_NAME, TEST_CLUSTER);
-//        testconfig.store(new FileOutputStream(configPath), "The port number is automatically set in " + EventRetrievalServiceIntegrationTest.class.getCanonicalName());
+        esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200))));
     }
 
     @Test
-    public void test() {
-        System.out.println("muh");
+    public void testCountApiIntegration() {
+
+        final SearchServerRequest request = new SearchServerRequest();
+        request.query = new MatchAllQuery();
+        request.isCountRequest = true;
+        request.index = TEST_INDEX;
+
+        final ElasticSearchCarrier<IElasticServerResponse> carrier = new ElasticSearchCarrier<>("testchain");
+        carrier.addServerRequest(request);
+
+        esSearchComponent.process(carrier);
+
+        assertEquals(1, carrier.getSearchResponses().size());
+
+        final IElasticServerResponse response = carrier.getSingleSearchServerResponse();
+
+        assertTrue(response.isCountResponse());
+
+        assertEquals(1, response.getNumFound());
     }
+
 }

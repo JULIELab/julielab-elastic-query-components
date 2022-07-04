@@ -25,9 +25,13 @@ public interface IElasticServerResponse extends ISearchServerResponse {
 
 	long getNumSuggestions();
 
+	long getNumFound();
+
 	List<ISearchServerDocument> getSuggestionResults();
 
 	boolean isSuggestionSearchResponse();
+
+	boolean isCountResponse();
 
 	void setSuggestionSearchResponse(boolean isSuggestionSearchResponse);
 	

@@ -8,6 +8,7 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.common.document.DocumentField;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.search.SearchHit;
@@ -44,9 +45,11 @@ public class ElasticServerResponse implements IElasticServerResponse {
     protected QueryError queryError;
     protected RestHighLevelClient client;
     protected String queryErrorMessage;
+    private CountResponse countResponse;
 
-    public ElasticServerResponse(SearchResponse response, RestHighLevelClient client) {
+    public ElasticServerResponse(SearchResponse response, CountResponse countResponse, RestHighLevelClient client) {
         this.response = response;
+        this.countResponse = countResponse;
         this.client = client;
         if (response != null) {
             this.suggest = response.getSuggest();
@@ -57,11 +60,16 @@ public class ElasticServerResponse implements IElasticServerResponse {
     }
 
     public ElasticServerResponse() {
-        this(null, null);
+        this(null, null, null);
     }
+
 
     public SearchResponse getResponse() {
         return response;
+    }
+
+    public CountResponse getCountResponse() {
+        return countResponse;
     }
 
     public RestHighLevelClient getClient() {
@@ -259,6 +267,8 @@ public class ElasticServerResponse implements IElasticServerResponse {
     public long getNumFound() {
         if (searchServerNotReachable)
             return 0;
+        if (null != countResponse)
+            return countResponse.getCount();
         if (null != response)
             return response.getHits().getTotalHits().value;
 
@@ -337,6 +347,11 @@ public class ElasticServerResponse implements IElasticServerResponse {
     @Override
     public boolean isSuggestionSearchResponse() {
         return isSuggestionSearchResponse;
+    }
+
+    @Override
+    public boolean isCountResponse() {
+        return countResponse != null;
     }
 
     @Override
