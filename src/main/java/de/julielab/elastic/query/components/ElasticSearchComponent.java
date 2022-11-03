@@ -129,7 +129,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                 for (int i = 0; i < searchRequests.size(); i++) {
 //                    Item item = responses[i];
 //                    SearchResponse response = item.getResponse();
-                        final boolean isCountRequest = serverRequests.get(i).isCountRequest;
+                    final boolean isCountRequest = serverRequests.get(i).isCountRequest;
                     SearchRequest sr = searchRequests.get(i);
                     ElasticServerResponse serverRsp = null;
                     try {
@@ -138,8 +138,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                         if (!isCountRequest) {
                             response = client.search(sr, RequestOptions.DEFAULT);
                             log.trace("Response from ElasticSearch: {}", response);
-                        }
-                        else {
+                        } else {
                             countResponse = client.count(new CountRequest(sr.indices(), sr.source().query()), RequestOptions.DEFAULT);
                             log.trace("Response from ElasticSearch: {}", countResponse);
                         }
@@ -153,6 +152,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
 
                         }
                     } catch (IOException e) {
+                        serverRsp = new ElasticServerResponse();
                         serverRsp.setQueryError(QueryError.NO_RESPONSE);
                         serverRsp.setQueryErrorMessage(e.getMessage());
                     }
@@ -488,10 +488,35 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             queryBuilder = buildWildcardQuery((WildcardQuery) searchServerQuery);
         } else if (SimpleQueryStringQuery.class.equals(searchServerQuery.getClass())) {
             queryBuilder = buildSimpleQueryStringQuery((SimpleQueryStringQuery) searchServerQuery);
+        } else if (RangeQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildRangeQuery((RangeQuery) searchServerQuery);
         } else {
             throw new IllegalArgumentException("Unhandled query type: " + searchServerQuery.getClass());
         }
         return queryBuilder;
+    }
+
+    private QueryBuilder buildRangeQuery(RangeQuery rangeQuery) {
+        final RangeQueryBuilder builder = QueryBuilders.rangeQuery(rangeQuery.field);
+        if (rangeQuery.lessThan != null)
+            builder.to(rangeQuery.lessThan);
+        else if (rangeQuery.lessThanOrEqual != null)
+            builder.to(rangeQuery.lessThanOrEqual, true);
+        if (rangeQuery.greaterThan != null)
+            builder.from(rangeQuery.greaterThan);
+        else if (rangeQuery.greaterThanOrEqual !=  null)
+            builder.from(rangeQuery.greaterThanOrEqual, true);
+        if (rangeQuery.format !=  null)
+            builder.format(rangeQuery.format);
+        if (rangeQuery.timeZone != null)
+            builder.timeZone(rangeQuery.timeZone);
+        if (rangeQuery.relation != null)
+            builder.relation(rangeQuery.relation.name());
+
+        if (rangeQuery.boost != 1f)
+            builder.boost(rangeQuery.boost);
+
+        return builder;
     }
 
     private QueryBuilder buildSimpleQueryStringQuery(SimpleQueryStringQuery simpleQueryStringQuery) {
