@@ -23,6 +23,8 @@ public interface IElasticServerResponse extends ISearchServerResponse {
 
 	IAggregationResult getAggregationResult(AggregationRequest aggCmd);
 
+	String getNumFoundRelation();
+
 	long getNumSuggestions();
 
 	long getNumFound();

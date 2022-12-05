@@ -14,6 +14,8 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.action.search.OpenPointInTimeRequest;
+import org.elasticsearch.action.search.OpenPointInTimeResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -23,7 +25,7 @@ import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.index.query.*;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
 import org.elasticsearch.index.query.functionscore.FieldValueFactorFunctionBuilder;
@@ -39,6 +41,7 @@ import org.elasticsearch.search.aggregations.bucket.terms.SignificantTermsAggreg
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.MaxAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.TopHitsAggregationBuilder;
+import org.elasticsearch.search.builder.PointInTimeBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
@@ -98,26 +101,33 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         List<SearchRequest> suggestionBuilders = new ArrayList<>(serverRequests.size());
         log.debug("Number of search server commands: {}", serverRequests.size());
         final PrerequisiteChecker prChecker = PrerequisiteChecker.checkThat();
-
-        for (int i = 0; i < serverRequests.size(); i++) {
-            log.debug("Configuring ElasticSearch query for server command {}", i);
-
-            SearchServerRequest serverRequest = serverRequests.get(i);
-            prChecker.notNull((Supplier<?>) () -> serverRequest)
-                    .notNull((Supplier<?>) () -> serverRequest.query)
-                    .withNames("Server request " + i, "Server request query for request " + i);
-
-            if (null != serverRequest.query) {
-                handleSearchRequest(searchRequests, serverRequest);
-            }
-            if (null != serverRequest.suggestionText) {
-                handleSuggestionRequest(suggestionBuilders, serverRequest);
-            }
-        }
-        prChecker.execute();
-
-        // Send the query to the server
         try {
+
+            for (int i = 0; i < serverRequests.size(); i++) {
+                log.debug("Configuring ElasticSearch query for server command {}", i);
+
+                SearchServerRequest serverRequest = serverRequests.get(i);
+                prChecker.notNull((Supplier<?>) () -> serverRequest)
+                        .notNull((Supplier<?>) () -> serverRequest.query)
+                        .withNames("Server request " + i, "Server request query for request " + i);
+
+                // If we have a deep pagination request with searchAfter, we need to create a "point in time" state
+                // of the index first
+                     OpenPointInTimeResponse openPointInTimeResponse = null;
+                if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                    openPointInTimeResponse = client.openPointInTime(new OpenPointInTimeRequest(serverRequest.index).keepAlive(TimeValue.parseTimeValue(serverRequest.downloadCompleteResultMethodKeepAlive, "DownloadAll.afterSearch.PIT")), RequestOptions.DEFAULT);
+                }
+
+                if (null != serverRequest.query) {
+                    handleSearchRequest(searchRequests, openPointInTimeResponse, serverRequest);
+                }
+                if (null != serverRequest.suggestionText) {
+                    handleSuggestionRequest(suggestionBuilders, serverRequest);
+                }
+            }
+            prChecker.execute();
+
+            // Send the query to the server
             if (searchRequests.size() == elasticSearchCarrier.getServerRequests().size()) {
 //                final MultiSearchRequest msr = new MultiSearchRequest();
 //                for (SearchRequest srb : searchRequests)
@@ -131,7 +141,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
 //                    SearchResponse response = item.getResponse();
                     final boolean isCountRequest = serverRequests.get(i).isCountRequest;
                     SearchRequest sr = searchRequests.get(i);
-                    ElasticServerResponse serverRsp = null;
+                    ElasticServerResponse serverRsp;
                     try {
                         SearchResponse response = null;
                         CountResponse countResponse = null;
@@ -143,7 +153,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                             log.trace("Response from ElasticSearch: {}", countResponse);
                         }
 
-                        serverRsp = new ElasticServerResponse(response, countResponse, client);
+                        serverRsp = new ElasticServerResponse(response, countResponse, serverRequests.get(i).downloadCompleteResults, searchRequests.get(i), client);
                         int status = isCountRequest ? countResponse.status().getStatus() : response.status().getStatus();
                         if (status > 299 && status < 200) {
                             serverRsp.setQueryError(QueryError.QUERY_ERROR);
@@ -165,7 +175,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             if (!suggestionBuilders.isEmpty()) {
                 for (SearchRequest suggestBuilder : suggestionBuilders) {
                     SearchResponse suggestResponse = client.search(suggestBuilder, RequestOptions.DEFAULT);
-                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, client));
+                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, false, null, client));
                 }
             }
             w.stop();
@@ -203,7 +213,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     }
 
     protected void handleSearchRequest(List<SearchRequest> searchRequestBuilders,
-                                       SearchServerRequest serverCmd) {
+                                       OpenPointInTimeResponse openPointInTimeResponse, SearchServerRequest serverCmd) {
         if (null == serverCmd.fieldsToReturn)
             serverCmd.addField("*");
 
@@ -217,11 +227,20 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         ssb.fetchSource(serverCmd.fetchSource);
         //ssb.explain(true)
 
-        if (serverCmd.downloadCompleteResults)
-            sr.scroll(TimeValue.timeValueMinutes(5));
+        if (serverCmd.downloadCompleteResults) {
+            if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("scroll"))
+                sr.scroll(serverCmd.downloadCompleteResultMethodKeepAlive);
+            else if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                if (openPointInTimeResponse  == null)
+                    throw new IllegalStateException("Download complete results is enabled but no point in time request was performed. This is coding error in this component.");
+                ssb.pointInTimeBuilder(new PointInTimeBuilder(openPointInTimeResponse.getPointInTimeId()));
+            } else
+                throw new IllegalArgumentException("Unknown deep pagination method '" + serverCmd.downloadCompleteResultsMethod+ "'.");
+        }
 
         QueryBuilder queryBuilder = buildQuery(serverCmd.query);
         ssb.query(queryBuilder);
+
 
         if (null != serverCmd.fieldsToReturn)
             for (String field : serverCmd.fieldsToReturn) {
@@ -233,6 +252,9 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             ssb.size(serverCmd.rows);
         else
             ssb.size(0);
+
+        if (serverCmd.trackTotalHitsUpTo != null)
+            ssb.trackTotalHitsUpTo(serverCmd.trackTotalHitsUpTo);
 
         if (null != serverCmd.aggregationRequests) {
             for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
@@ -316,7 +338,8 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                 }
                 ssb.sort(sortCmd.field, sort);
             }
-        }
+        } else if (serverCmd.downloadCompleteResults && serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter"))
+            throw new IllegalArgumentException("The searchAfter method is used for deep pagination but no sort command is given. A sort command is necessary on a unique field to be able to specify distinct result pages. Best performance is obtained by using the  internal _shard_doc field in descending order without tracking total hits.");
 
         if (null != serverCmd.postFilterQuery) {
             QueryBuilder postFilter = buildQuery(serverCmd.postFilterQuery);
@@ -504,9 +527,9 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             builder.to(rangeQuery.lessThanOrEqual, true);
         if (rangeQuery.greaterThan != null)
             builder.from(rangeQuery.greaterThan);
-        else if (rangeQuery.greaterThanOrEqual !=  null)
+        else if (rangeQuery.greaterThanOrEqual != null)
             builder.from(rangeQuery.greaterThanOrEqual, true);
-        if (rangeQuery.format !=  null)
+        if (rangeQuery.format != null)
             builder.format(rangeQuery.format);
         if (rangeQuery.timeZone != null)
             builder.timeZone(rangeQuery.timeZone);

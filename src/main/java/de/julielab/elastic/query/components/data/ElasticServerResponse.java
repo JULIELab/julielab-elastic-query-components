@@ -3,14 +3,16 @@ package de.julielab.elastic.query.components.data;
 import de.julielab.elastic.query.components.data.aggregation.*;
 import de.julielab.elastic.query.services.IElasticServerResponse;
 import org.apache.commons.lang.StringUtils;
+import org.apache.lucene.search.TotalHits;
 import org.elasticsearch.action.search.ClearScrollRequest;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.common.document.DocumentField;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregation;
@@ -19,6 +21,8 @@ import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.aggregations.metrics.Max;
 import org.elasticsearch.search.aggregations.metrics.TopHits;
+import org.elasticsearch.search.builder.PointInTimeBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.suggest.Suggest;
 import org.elasticsearch.search.suggest.Suggest.Suggestion;
 import org.elasticsearch.search.suggest.Suggest.Suggestion.Entry.Option;
@@ -45,11 +49,16 @@ public class ElasticServerResponse implements IElasticServerResponse {
     protected QueryError queryError;
     protected RestHighLevelClient client;
     protected String queryErrorMessage;
+    private boolean downloadCompleteResults;
+    private SearchRequest searchRequest;
     private CountResponse countResponse;
 
-    public ElasticServerResponse(SearchResponse response, CountResponse countResponse, RestHighLevelClient client) {
+
+    public ElasticServerResponse(SearchResponse response, CountResponse countResponse, boolean downloadCompleteResults, SearchRequest searchRequest, RestHighLevelClient client) {
         this.response = response;
         this.countResponse = countResponse;
+        this.downloadCompleteResults = downloadCompleteResults;
+        this.searchRequest = searchRequest;
         this.client = client;
         if (response != null) {
             this.suggest = response.getSuggest();
@@ -60,9 +69,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
     }
 
     public ElasticServerResponse() {
-        this(null, null, null);
     }
-
 
     public SearchResponse getResponse() {
         return response;
@@ -209,10 +216,15 @@ public class ElasticServerResponse implements IElasticServerResponse {
 
             private int pos = 0;
             private SearchHit[] currentHits = response.getHits().getHits();
+            private String pointInTimeId = response.pointInTimeId();
+            private Object[] lastSortValues = currentHits != null && currentHits.length > 0 ? currentHits[currentHits.length - 1].getSortValues() : null;
 
             @Override
             public boolean hasNext() {
                 try {
+                    // pointInTime and scroll are indicators for two different types of deep pagination.
+                    // PointInTime is used with searchAfter which is preferred.
+                    // In our tests, scroll was much faster, see the DeepPaginationTest class.
                     SearchResponse currentResponse = scrollResponse != null ? scrollResponse : response;
                     String scrollId = currentResponse.getScrollId() != null ? currentResponse.getScrollId() : response.getScrollId();
                     if (pos < currentHits.length) {
@@ -227,6 +239,23 @@ public class ElasticServerResponse implements IElasticServerResponse {
                         log.trace("Received {} new hits from scroll request.", currentHits.length);
                         pos = 0;
                         scrollResponse = sr;
+                        if (currentHits.length > 0)
+                            return true;
+                    } else if (pointInTimeId != null && downloadCompleteResults) {
+                        log.debug(
+                                "No more documents present in the current response but PIT ID {}. Querying next batch.",
+                                pointInTimeId);
+                        final SearchSourceBuilder sourceBuilder = searchRequest.source();
+                        sourceBuilder.pointInTimeBuilder(new PointInTimeBuilder(pointInTimeId));
+                        sourceBuilder.searchAfter(lastSortValues);
+                        SearchResponse sr = client.search(searchRequest, RequestOptions.DEFAULT);
+                        currentHits = sr.getHits().getHits();
+                        lastSortValues = currentHits != null && currentHits.length > 0 ? currentHits[currentHits.length - 1].getSortValues() : null;
+                        log.trace("Received {} new hits with searchAfter.", currentHits.length);
+                        pos = 0;
+                        scrollResponse = sr;
+                        // update point in time ID
+                        pointInTimeId = scrollResponse.pointInTimeId();
                         if (currentHits.length > 0)
                             return true;
                     }
@@ -273,6 +302,15 @@ public class ElasticServerResponse implements IElasticServerResponse {
             return response.getHits().getTotalHits().value;
 
         return 0;
+    }
+
+    @Override
+    public String getNumFoundRelation() {
+        if (null != countResponse)
+            return TotalHits.Relation.EQUAL_TO.name();
+        if (null != response)
+            return response.getHits().getTotalHits().relation.name();
+        return null;
     }
 
     @Override
@@ -350,13 +388,13 @@ public class ElasticServerResponse implements IElasticServerResponse {
     }
 
     @Override
-    public boolean isCountResponse() {
-        return countResponse != null;
+    public void setSuggestionSearchResponse(boolean isSuggestionSearchResponse) {
+        this.isSuggestionSearchResponse = isSuggestionSearchResponse;
     }
 
     @Override
-    public void setSuggestionSearchResponse(boolean isSuggestionSearchResponse) {
-        this.isSuggestionSearchResponse = isSuggestionSearchResponse;
+    public boolean isCountResponse() {
+        return countResponse != null;
     }
 
     public QueryError getQueryError() {

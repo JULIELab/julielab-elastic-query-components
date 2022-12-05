@@ -7,7 +7,7 @@
 		<artifactId>julielab-parent</artifactId>
 	</parent>
 	<artifactId>julielab-elastic-query-components</artifactId>
-	<version>1.6.0-SNAPSHOT</version>
+	<version>1.7.0-SNAPSHOT</version>
 	<name>JULIE Lab ElasticSearch Query Components</name>
 	<description>This is a Tapestry 5 project that offers a Tapestry-IoC integrated query layer for an ElasticSearch server.</description>
 	<dependencies>
@@ -62,7 +62,7 @@
 		</dependency>
 	</dependencies>
 	<properties>
-		<es-version>7.9.1</es-version>
-		<tapestry-version>5.5.0</tapestry-version>
+		<es-version>7.17.7</es-version>
+		<tapestry-version>5.8.2</tapestry-version>
 	</properties>
 </project>
