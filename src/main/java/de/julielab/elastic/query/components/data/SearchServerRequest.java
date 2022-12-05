@@ -131,7 +131,11 @@ public class SearchServerRequest {
      * @see <url>https://www.elastic.co/guide/en/elasticsearch/reference/current/sql-functions-datetime.html</url>
      */
     public String downloadCompleteResultMethodKeepAlive = "1m";
-
+    /**
+     * Is set to true, the {@link de.julielab.elastic.query.components.ElasticSearchComponent} checks the settings for
+     * optimal performance and logs warning message if non-optimal settings are detected.
+     */
+    public boolean suppressDownloadCompleteResultPerformanceChecks = false;
     /**
      * The number of hits to track with accuracy. Specify Integer.MAX_VALUE if you need total accurate hit counts.
      */

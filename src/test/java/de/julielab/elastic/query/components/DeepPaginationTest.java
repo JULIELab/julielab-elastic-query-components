@@ -37,7 +37,7 @@ import static org.junit.Assert.assertTrue;
 public class DeepPaginationTest {
     public static final String TEST_INDEX = "testindex";
     public static final String TEST_CLUSTER = "testcluster";
-    public static final int NUM_DOCS = 1000000;
+    public static final int NUM_DOCS = 100000;
     private final static Logger log = LoggerFactory.getLogger(DeepPaginationTest.class);
     // in case we need to disable X-shield: https://stackoverflow.com/a/51172136/1314955
     @ClassRule

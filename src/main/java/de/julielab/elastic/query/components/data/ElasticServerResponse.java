@@ -205,6 +205,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
         return null;
     }
 
+
     @Override
     public Stream<ISearchServerDocument> getDocumentResults() {
         if (searchServerNotReachable) {
@@ -224,7 +225,6 @@ public class ElasticServerResponse implements IElasticServerResponse {
                 try {
                     // pointInTime and scroll are indicators for two different types of deep pagination.
                     // PointInTime is used with searchAfter which is preferred.
-                    // In our tests, scroll was much faster, see the DeepPaginationTest class.
                     SearchResponse currentResponse = scrollResponse != null ? scrollResponse : response;
                     String scrollId = currentResponse.getScrollId() != null ? currentResponse.getScrollId() : response.getScrollId();
                     if (pos < currentHits.length) {

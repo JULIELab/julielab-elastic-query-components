@@ -111,9 +111,11 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                         .notNull((Supplier<?>) () -> serverRequest.query)
                         .withNames("Server request " + i, "Server request query for request " + i);
 
+                checkDeepPagingParameters(serverRequest);
+
                 // If we have a deep pagination request with searchAfter, we need to create a "point in time" state
                 // of the index first
-                     OpenPointInTimeResponse openPointInTimeResponse = null;
+                OpenPointInTimeResponse openPointInTimeResponse = null;
                 if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
                     openPointInTimeResponse = client.openPointInTime(new OpenPointInTimeRequest(serverRequest.index).keepAlive(TimeValue.parseTimeValue(serverRequest.downloadCompleteResultMethodKeepAlive, "DownloadAll.afterSearch.PIT")), RequestOptions.DEFAULT);
                 }
@@ -199,6 +201,31 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         return false;
     }
 
+    private void checkDeepPagingParameters(SearchServerRequest serverRequest) {
+        if (!serverRequest.suppressDownloadCompleteResultPerformanceChecks && serverRequest.downloadCompleteResults) {
+            final List<SortCommand> sortCmds = serverRequest.sortCmds;
+            if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("scroll")) {
+                if (!sortCmds.isEmpty()) {
+                    for (SortCommand cmd : sortCmds) {
+                        if (cmd.field.equals("_doc") && cmd.order == SortCommand.SortOrder.DESCENDING)
+                            log.warn("All results are downloaded with a scroll cursor. However, the sorting on the _doc field is set in descending order. This makes scroll slow. Use ascending order instead. This warning can be disabled in code the SearchServerRequest object.");
+                        else if (!cmd.field.equals("_doc"))
+                            log.warn("All results are downloaded with a scroll cursor. However, the sorting field is set to " + cmd.field + ". This makes scroll slow. Use ascending order instead. This warning can be disabled in code the SearchServerRequest object.");
+                    }
+                }
+            } else if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                if (sortCmds.isEmpty())
+                    log.warn("All results are downloaded with a searchAfter cursor. However, no sorting is given. To make the retrieval more efficient, sort ascending (even though the ElasticSearch documentation says descending, our tests showed ascending was quicker) on the '_shard_doc' field. This warning can be disabled in code the SearchServerRequest object.");
+                else {
+                    for (SortCommand cmd : sortCmds) {
+                        if (cmd.field.equals("_shard_doc") && cmd.order == SortCommand.SortOrder.DESCENDING)
+                            log.warn("All results are downloaded with a searchAfter cursor. However, the sorting on the _shard_doc field is set in descending order. This makes searchAfter slow. Use ascending order instead. The ElasticSearch documentation says to sort descending but our tests showed that ascending was quicker. This warning can be disabled in code the SearchServerRequest object.");
+                    }
+                }
+            }
+        }
+    }
+
     protected void handleSuggestionRequest(List<SearchRequest> suggestBuilders, SearchServerRequest serverCmd) {
         SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
                 SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
@@ -231,11 +258,11 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("scroll"))
                 sr.scroll(serverCmd.downloadCompleteResultMethodKeepAlive);
             else if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
-                if (openPointInTimeResponse  == null)
+                if (openPointInTimeResponse == null)
                     throw new IllegalStateException("Download complete results is enabled but no point in time request was performed. This is coding error in this component.");
                 ssb.pointInTimeBuilder(new PointInTimeBuilder(openPointInTimeResponse.getPointInTimeId()));
             } else
-                throw new IllegalArgumentException("Unknown deep pagination method '" + serverCmd.downloadCompleteResultsMethod+ "'.");
+                throw new IllegalArgumentException("Unknown deep pagination method '" + serverCmd.downloadCompleteResultsMethod + "'.");
         }
 
         QueryBuilder queryBuilder = buildQuery(serverCmd.query);
