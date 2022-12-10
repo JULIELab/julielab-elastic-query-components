@@ -29,6 +29,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
@@ -63,7 +65,8 @@ public class DeepPaginationTest {
             // Create the test index
             URL url = new URL("http://localhost:" + es.getMappedPort(9200) + "/" + TEST_INDEX);
 
-            String mapping = om.writeValueAsString(Map.of("mappings", Map.of("properties", Map.of("text", Map.of("type", "text", "store", true)))));
+            String mapping = om.writeValueAsString(Map.of("mappings", Map.of("properties", Map.of("text", Map.of("type", "text", "store", true), "sortid", Map.of("type", "keyword", "store", "true")))));
+            System.out.println(mapping);
 
             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
             urlConnection.setRequestMethod("PUT");
@@ -87,8 +90,10 @@ public class DeepPaginationTest {
             int batchsize = 1000;
             int numIndexed = 0;
             List<String> bulkCommandLines = new ArrayList<>(batchsize);
+            final List<Integer> ids = IntStream.range(0, NUM_DOCS).mapToObj(Integer::valueOf).collect(Collectors.toList());
+            Collections.shuffle(ids);
             for (int i = 0; i < NUM_DOCS; i++) {
-                String jsonContents = om.writeValueAsString(Map.of("text", "This is an example text for document " + i, "docnum", i));
+                String jsonContents = om.writeValueAsString(Map.of("text", "This is an example text for document " + i, "docnum", i, "sortid", "PMC" + ids.get(i) + "_1.0_0.1"));
                 jsonContents = jsonContents.replaceAll("\n", "");
                 Map<String, Object> indexMap = new HashMap<>();
                 indexMap.put("_index", TEST_INDEX);
@@ -171,6 +176,39 @@ public class DeepPaginationTest {
         request.fieldsToReturn = List.of("text");
         request.trackTotalHitsUpTo = Integer.MAX_VALUE;
         request.sortCmds = List.of(new SortCommand("_shard_doc", SortCommand.SortOrder.ASCENDING));
+        request.rows = 500;
+
+
+        final ElasticSearchCarrier<IElasticServerResponse> carrier = new ElasticSearchCarrier<>("testchain");
+        carrier.addServerRequest(request);
+
+        esSearchComponent.process(carrier);
+
+        final IElasticServerResponse response = carrier.getSingleSearchServerResponse();
+        log.info("Total hits: {} with relation {}", response.getNumFound(), response.getNumFoundRelation());
+        final Iterator<ISearchServerDocument> iterator = response.getDocumentResults().iterator();
+        int received = 0;
+        long nanos = System.nanoTime();
+        while (iterator.hasNext()) {
+            ISearchServerDocument doc = iterator.next();
+            ++received;
+        }
+        nanos = System.nanoTime() - nanos;
+        log.info("Received {} documents in {}s", received, nanos / Math.pow(10, 9));
+        assertEquals(NUM_DOCS, received);
+    }
+
+    @Test
+    public void searchAfterCustomSort() {
+
+        final SearchServerRequest request = new SearchServerRequest();
+        request.query = new MatchAllQuery();
+        request.index = TEST_INDEX;
+        request.downloadCompleteResults = true;
+        request.downloadCompleteResultsMethod = "searchAfter";
+        request.fieldsToReturn = List.of("text");
+        request.trackTotalHitsUpTo = Integer.MAX_VALUE;
+        request.sortCmds = List.of(new SortCommand("sortid", SortCommand.SortOrder.ASCENDING));
         request.rows = 500;
 
 

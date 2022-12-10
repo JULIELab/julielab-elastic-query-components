@@ -1,10 +1,9 @@
 package de.julielab.elastic.query.components;
 
 import de.julielab.elastic.query.ElasticQuerySymbolConstants;
-import de.julielab.elastic.query.components.data.ElasticSearchCarrier;
-import de.julielab.elastic.query.components.data.ElasticServerResponse;
-import de.julielab.elastic.query.components.data.SearchServerRequest;
+import de.julielab.elastic.query.components.data.*;
 import de.julielab.elastic.query.components.data.query.MatchAllQuery;
+import de.julielab.elastic.query.components.data.query.TermQuery;
 import de.julielab.elastic.query.services.ElasticSearchClient;
 import de.julielab.elastic.query.services.ElasticSearchClientProvider;
 import de.julielab.elastic.query.services.IElasticServerResponse;
@@ -114,7 +113,7 @@ public class ElasticSearchComponentTest {
             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
             String countResponse = IOUtils.toString(urlConnection.getInputStream(), StandardCharsets.UTF_8);
             log.debug("Response for the count of documents: {}", countResponse);
-            assertTrue(countResponse.contains("count\":1"));
+            assertTrue(countResponse.contains("count\":3"));
         }
         esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200))));
     }
@@ -138,7 +137,69 @@ public class ElasticSearchComponentTest {
 
         assertTrue(response.isCountResponse());
 
-        assertEquals(1, response.getNumFound());
+        assertEquals(3, response.getNumFound());
+    }
+
+    @Test
+    public void testEmptySearchAfter() {
+
+        final SearchServerRequest request = new SearchServerRequest();
+        request.query = new TermQuery();
+        ((TermQuery) request.query).field = "doesnotexist";
+        ((TermQuery) request.query).term = "anything";
+        request.downloadCompleteResults = true;
+        request.downloadCompleteResultsMethod = "searchAfter";
+        request.addSortCommand("_shard_doc", SortCommand.SortOrder.ASCENDING);
+        request.index = TEST_INDEX;
+
+        final ElasticSearchCarrier<IElasticServerResponse> carrier = new ElasticSearchCarrier<>("testchain");
+        carrier.addServerRequest(request);
+
+        esSearchComponent.process(carrier);
+
+        assertEquals(1, carrier.getSearchResponses().size());
+
+        final IElasticServerResponse response = carrier.getSingleSearchServerResponse();
+
+        // there are no results
+        assertEquals(0, response.getNumFound());
+        // But we still try to iterate over the documents. This was cause of error in the past.
+        final Iterator<ISearchServerDocument> docIt = response.getDocumentResults().iterator();
+        while (docIt.hasNext()) {
+            final ISearchServerDocument ignored = docIt.next();
+        }
+    }
+
+    @Test
+    public void testDeepPaginationLimit() {
+
+        final SearchServerRequest request = new SearchServerRequest();
+        request.query = new MatchAllQuery();
+        request.downloadCompleteResults = true;
+        request.downloadCompleteResultsMethod = "searchAfter";
+        request.downloadCompleteResultsLimit = 2;
+        request.addSortCommand("_shard_doc", SortCommand.SortOrder.ASCENDING);
+        request.index = TEST_INDEX;
+
+        final ElasticSearchCarrier<IElasticServerResponse> carrier = new ElasticSearchCarrier<>("testchain");
+        carrier.addServerRequest(request);
+
+        esSearchComponent.process(carrier);
+
+        assertEquals(1, carrier.getSearchResponses().size());
+
+        final IElasticServerResponse response = carrier.getSingleSearchServerResponse();
+
+        // there should be more results than we got
+        assertEquals(3, response.getNumFound());
+        // But we still try to iterate over the documents. This was cause of error in the past.
+        final Iterator<ISearchServerDocument> docIt = response.getDocumentResults().iterator();
+        int received = 0;
+        while (docIt.hasNext()) {
+            final ISearchServerDocument ignored = docIt.next();
+            ++received;
+        }
+        assertEquals(2, received);
     }
 
 }

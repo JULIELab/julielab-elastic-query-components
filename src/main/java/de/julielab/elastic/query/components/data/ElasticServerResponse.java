@@ -4,10 +4,7 @@ import de.julielab.elastic.query.components.data.aggregation.*;
 import de.julielab.elastic.query.services.IElasticServerResponse;
 import org.apache.commons.lang.StringUtils;
 import org.apache.lucene.search.TotalHits;
-import org.elasticsearch.action.search.ClearScrollRequest;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.search.SearchScrollRequest;
+import org.elasticsearch.action.search.*;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.core.CountResponse;
@@ -50,14 +47,16 @@ public class ElasticServerResponse implements IElasticServerResponse {
     protected RestHighLevelClient client;
     protected String queryErrorMessage;
     private boolean downloadCompleteResults;
+    private int downloadCompleteResultsLimit;
     private SearchRequest searchRequest;
     private CountResponse countResponse;
 
 
-    public ElasticServerResponse(SearchResponse response, CountResponse countResponse, boolean downloadCompleteResults, SearchRequest searchRequest, RestHighLevelClient client) {
+    public ElasticServerResponse(SearchResponse response, CountResponse countResponse, boolean downloadCompleteResults, int downloadCompleteResultsLimit, SearchRequest searchRequest, RestHighLevelClient client) {
         this.response = response;
         this.countResponse = countResponse;
         this.downloadCompleteResults = downloadCompleteResults;
+        this.downloadCompleteResultsLimit = downloadCompleteResultsLimit;
         this.searchRequest = searchRequest;
         this.client = client;
         if (response != null) {
@@ -213,63 +212,76 @@ public class ElasticServerResponse implements IElasticServerResponse {
             return Stream.empty();
         }
 
-        Iterator<ISearchServerDocument> documentIt = new Iterator<ISearchServerDocument>() {
+        Iterator<ISearchServerDocument> documentIt = new Iterator<>() {
 
             private int pos = 0;
+            private int documentsReturned = 0;
             private SearchHit[] currentHits = response.getHits().getHits();
             private String pointInTimeId = response.pointInTimeId();
             private Object[] lastSortValues = currentHits != null && currentHits.length > 0 ? currentHits[currentHits.length - 1].getSortValues() : null;
 
             @Override
             public boolean hasNext() {
-                try {
-                    // pointInTime and scroll are indicators for two different types of deep pagination.
-                    // PointInTime is used with searchAfter which is preferred.
-                    SearchResponse currentResponse = scrollResponse != null ? scrollResponse : response;
-                    String scrollId = currentResponse.getScrollId() != null ? currentResponse.getScrollId() : response.getScrollId();
-                    if (pos < currentHits.length) {
-                        log.trace("There are more documents in the current response.");
-                        return true;
-                    } else if (!StringUtils.isBlank(scrollId)) {
-                        log.debug(
-                                "No more documents present in the current response but got scroll ID {}. Querying next batch.",
-                                scrollId);
-                        SearchResponse sr = client.scroll(new SearchScrollRequest(scrollId).scroll(TimeValue.timeValueMinutes(5)), RequestOptions.DEFAULT);
-                        currentHits = sr.getHits().getHits();
-                        log.trace("Received {} new hits from scroll request.", currentHits.length);
-                        pos = 0;
-                        scrollResponse = sr;
-                        if (currentHits.length > 0)
+                if (currentHits.length > 0 && documentsReturned < downloadCompleteResultsLimit) {
+                    try {
+                        // pointInTime and scroll are indicators for two different types of deep pagination.
+                        // PointInTime is used with searchAfter which is preferred.
+                        SearchResponse currentResponse = scrollResponse != null ? scrollResponse : response;
+                        String scrollId = currentResponse.getScrollId() != null ? currentResponse.getScrollId() : response.getScrollId();
+                        if (pos < currentHits.length) {
+                            log.trace("There are more documents in the current response.");
                             return true;
-                    } else if (pointInTimeId != null && downloadCompleteResults) {
-                        log.debug(
-                                "No more documents present in the current response but PIT ID {}. Querying next batch.",
-                                pointInTimeId);
-                        final SearchSourceBuilder sourceBuilder = searchRequest.source();
-                        sourceBuilder.pointInTimeBuilder(new PointInTimeBuilder(pointInTimeId));
-                        sourceBuilder.searchAfter(lastSortValues);
-                        SearchResponse sr = client.search(searchRequest, RequestOptions.DEFAULT);
-                        currentHits = sr.getHits().getHits();
-                        lastSortValues = currentHits != null && currentHits.length > 0 ? currentHits[currentHits.length - 1].getSortValues() : null;
-                        log.trace("Received {} new hits with searchAfter.", currentHits.length);
-                        pos = 0;
-                        scrollResponse = sr;
-                        // update point in time ID
-                        pointInTimeId = scrollResponse.pointInTimeId();
-                        if (currentHits.length > 0)
-                            return true;
+                        } else if (!StringUtils.isBlank(scrollId)) {
+                            log.debug(
+                                    "No more documents present in the current response but got scroll ID {}. Querying next batch.",
+                                    scrollId);
+                            SearchResponse sr = client.scroll(new SearchScrollRequest(scrollId).scroll(TimeValue.timeValueMinutes(5)), RequestOptions.DEFAULT);
+                            currentHits = sr.getHits().getHits();
+                            log.trace("Received {} new hits from scroll request.", currentHits.length);
+                            pos = 0;
+                            scrollResponse = sr;
+                            if (currentHits.length > 0)
+                                return true;
+                        } else if (pointInTimeId != null && downloadCompleteResults) {
+                            log.debug(
+                                    "No more documents present in the current response but PIT ID {}. Querying next batch.",
+                                    pointInTimeId);
+                            final SearchSourceBuilder sourceBuilder = searchRequest.source();
+                            sourceBuilder.pointInTimeBuilder(new PointInTimeBuilder(pointInTimeId));
+                            sourceBuilder.searchAfter(lastSortValues);
+                            SearchResponse sr = client.search(searchRequest, RequestOptions.DEFAULT);
+                            currentHits = sr.getHits().getHits();
+                            lastSortValues = currentHits != null && currentHits.length > 0 ? currentHits[currentHits.length - 1].getSortValues() : null;
+                            log.trace("Received {} new hits with searchAfter.", currentHits.length);
+                            pos = 0;
+                            scrollResponse = sr;
+                            // update point in time ID
+                            pointInTimeId = scrollResponse.pointInTimeId();
+                            if (currentHits.length > 0)
+                                return true;
+                        }
+                    } catch (IOException e) {
+                        log.error("Could not retrieve the next batch of documents", e);
                     }
-                } catch (IOException e) {
-                    log.error("Could not retrieve the next batch of documents", e);
                 }
-                log.debug("No more hits returned from scrolling request.");
+                if (documentsReturned < downloadCompleteResultsLimit)
+                    log.debug("No more hits returned from scrolling request.");
+                else
+                    log.debug("Hit the deep pagination limit of {}. Closing the request.", downloadCompleteResultsLimit);
                 try {
                     pos = Integer.MAX_VALUE;
                     if (response.getScrollId() != null) {
                         log.debug("Closing the scroll with ID {}", response.getScrollId());
                         final ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
                         clearScrollRequest.addScrollId(response.getScrollId());
-                        client.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
+                        final boolean succeeded = client.clearScroll(clearScrollRequest, RequestOptions.DEFAULT).isSucceeded();
+                        log.debug("Closing of scroll did succeed: {}", succeeded);
+                    }
+                    if (pointInTimeId != null && downloadCompleteResults) {
+                        log.debug("Closing point of time (PIT) with ID {}", pointInTimeId);
+                        final ClosePointInTimeRequest closePointInTimeRequest = new ClosePointInTimeRequest(pointInTimeId);
+                        final boolean succeeded = client.closePointInTime(closePointInTimeRequest, RequestOptions.DEFAULT).isSucceeded();
+                        log.debug("Closing of point in time did succeed: {}", succeeded);
                     }
                 } catch (IOException e) {
                     log.error("Could not close scroll.", e);
@@ -283,6 +295,7 @@ public class ElasticServerResponse implements IElasticServerResponse {
                     return null;
                 log.trace("Returning next document at position {} of the current scroll batch.", pos);
                 SearchHit hit = currentHits[pos++];
+                ++documentsReturned;
                 return new ElasticSearchDocumentHit(hit);
             }
 

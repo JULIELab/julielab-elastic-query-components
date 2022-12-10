@@ -155,7 +155,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                             log.trace("Response from ElasticSearch: {}", countResponse);
                         }
 
-                        serverRsp = new ElasticServerResponse(response, countResponse, serverRequests.get(i).downloadCompleteResults, searchRequests.get(i), client);
+                        serverRsp = new ElasticServerResponse(response, countResponse, serverRequests.get(i).downloadCompleteResults, serverRequests.get(i).downloadCompleteResultsLimit, searchRequests.get(i), client);
                         int status = isCountRequest ? countResponse.status().getStatus() : response.status().getStatus();
                         if (status > 299 && status < 200) {
                             serverRsp.setQueryError(QueryError.QUERY_ERROR);
@@ -177,7 +177,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             if (!suggestionBuilders.isEmpty()) {
                 for (SearchRequest suggestBuilder : suggestionBuilders) {
                     SearchResponse suggestResponse = client.search(suggestBuilder, RequestOptions.DEFAULT);
-                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, false, null, client));
+                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, false, -1, null, client));
                 }
             }
             w.stop();

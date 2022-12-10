@@ -114,6 +114,10 @@ public class SearchServerRequest {
      */
     public String downloadCompleteResultsMethod = "scroll";
     /**
+     * Limits the maximum documents returned via deep pagination.
+     */
+    public int downloadCompleteResultsLimit = Integer.MAX_VALUE;
+    /**
      * <p>Used when {@link #downloadCompleteResultsMethod} is 'searchAfter'. Denotes index of the sort command
      * in {@link #sortCmds} that should be used for the searchAfter pagination.</p>
      * <p>
