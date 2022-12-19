@@ -1,9 +1,9 @@
 package de.julielab.elastic.query.components.data;
 
 import org.apache.commons.lang.NotImplementedException;
+import org.elasticsearch.common.document.DocumentField;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 
@@ -16,13 +16,13 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	private Map<String, List<String>> fieldHightlights;
 	private Map<String, List<ISearchServerDocument>> innerHits;
 
-	public ElasticSearchDocumentHit(SearchHit hit) {
+	ElasticSearchDocumentHit(SearchHit hit) {
 		this.hit = hit;
 	}
 
 	@Override
 	public Optional<List<Object>> getFieldValues(String fieldName) {
-		SearchHitField field = hit.getField(fieldName);
+		DocumentField field = hit.field(fieldName);
 		if (null == field)
 			return Optional.empty();
 		return Optional.ofNullable(field.getValues());
@@ -30,13 +30,13 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 
 	@Override
 	public <V> Optional<V> getFieldValue(String fieldName) {
-		SearchHitField field = hit.getField(fieldName);
-		return Optional.ofNullable(field).map(SearchHitField::getValue);
+		DocumentField field = hit.field(fieldName);
+		return Optional.ofNullable(field).map(DocumentField::getValue);
 	}
 
 	@Override
 	public <V> Optional<V> get(String fieldName) {
-		SearchHitField field = hit.getField(fieldName);
+		DocumentField field = hit.field(fieldName);
 		if (null == field)
 			return Optional.empty();
 		return Optional.ofNullable(field.getValue());
@@ -50,8 +50,8 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
-		Map<String, SearchHitField> fields = hit.getFields();
-		for (Entry<String, SearchHitField> entry : fields.entrySet()) {
+		Map<String, DocumentField> fields = hit.getFields();
+		for (Entry<String, DocumentField> entry : fields.entrySet()) {
 			sb.append(entry.getKey());
 			sb.append(": ");
 			sb.append(entry.getValue().getValue().toString());
@@ -104,11 +104,6 @@ public class ElasticSearchDocumentHit implements ISearchServerDocument {
 	@Override
 	public String getId() {
 		return hit.getId();
-	}
-
-	@Override
-	public String getIndexType() {
-		return hit.getType();
 	}
 
 	@Override

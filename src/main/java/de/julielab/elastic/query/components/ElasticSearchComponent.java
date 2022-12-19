@@ -9,21 +9,23 @@ import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.BoostM
 import de.julielab.elastic.query.components.data.query.FunctionScoreQuery.FieldValueFactor;
 import de.julielab.elastic.query.services.IElasticServerResponse;
 import de.julielab.elastic.query.services.ISearchClientProvider;
-import de.julielab.elastic.query.services.ISearchServerResponse;
+import de.julielab.java.utilities.prerequisites.PrerequisiteChecker;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.lucene.search.join.ScoreMode;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.action.search.MultiSearchRequestBuilder;
-import org.elasticsearch.action.search.MultiSearchResponse;
-import org.elasticsearch.action.search.MultiSearchResponse.Item;
-import org.elasticsearch.action.search.SearchRequestBuilder;
+import org.elasticsearch.action.search.OpenPointInTimeRequest;
+import org.elasticsearch.action.search.OpenPointInTimeResponse;
+import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.Client;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.core.CountRequest;
+import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.common.lucene.search.function.FieldValueFactorFunction;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.index.query.*;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
 import org.elasticsearch.index.query.functionscore.FieldValueFactorFunctionBuilder;
@@ -33,12 +35,14 @@ import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.aggregations.AbstractAggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
-import org.elasticsearch.search.aggregations.bucket.significant.SignificantTermsAggregationBuilder;
-import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.BucketOrder;
+import org.elasticsearch.search.aggregations.bucket.terms.IncludeExclude;
+import org.elasticsearch.search.aggregations.bucket.terms.SignificantTermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
-import org.elasticsearch.search.aggregations.bucket.terms.support.IncludeExclude;
-import org.elasticsearch.search.aggregations.metrics.max.MaxAggregationBuilder;
-import org.elasticsearch.search.aggregations.metrics.tophits.TopHitsAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.MaxAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.TopHitsAggregationBuilder;
+import org.elasticsearch.search.builder.PointInTimeBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder.Field;
@@ -47,6 +51,7 @@ import org.elasticsearch.search.suggest.SuggestBuilder;
 import org.elasticsearch.search.suggest.SuggestBuilders;
 import org.slf4j.Logger;
 
+import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.function.Supplier;
@@ -61,12 +66,12 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     private static final int DEFAULT_FRAGSIZE = 100;
     private static final int DEFAULT_NUMBER_FRAGS = 5;
 
-    private Client client;
+    private RestHighLevelClient client;
 
     public ElasticSearchComponent(Logger log, ISearchClientProvider searchClientProvider) {
         super(log);
         log.info("Obtaining ElasticSearch client...");
-        client = searchClientProvider.getSearchClient().getClient();
+        client = searchClientProvider.getSearchClient().getRestHighLevelClient();
         log.info("ElasticSearch client retrieved.");
     }
 
@@ -75,62 +80,93 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         StopWatch w = new StopWatch();
         w.start();
         List<SearchServerRequest> serverRequests = elasticSearchCarrier.getServerRequests();
-        checkNotNull((Supplier<?>) () -> serverRequests, "Server requests");
-        checkNotEmpty(serverRequests, "Server requests");
-        stopIfError();
+        PrerequisiteChecker.checkThat()
+                .notNull((Supplier<?>) () -> serverRequests)
+                .notEmpty(serverRequests)
+                .withNames("Server requests", "Server requests")
+                .execute();
 
-        // It could be that the search component occurs multiple times in a
+        // It could
+        // be that the search component occurs multiple times in a
         // search chain. But then, the last response(s) should have been
         // consumed by now.
         elasticSearchCarrier.clearSearchResponses();
 
-        // One "Semedico search" may result in multiple search server commands,
+        // One application search may result in multiple search server commands,
         // e.g. suggestions where for each facet suggestions are searched or for
         // B-terms where there are multiple search nodes.
         // We should just take care that the results are ordered in a parallel
         // way to the server commands, see at the end of the method.
-        List<SearchRequestBuilder> searchRequestBuilders = new ArrayList<>(serverRequests.size());
-        List<SearchRequestBuilder> suggestionBuilders = new ArrayList<>(serverRequests.size());
+        List<SearchRequest> searchRequests = new ArrayList<>(serverRequests.size());
+        List<SearchRequest> suggestionBuilders = new ArrayList<>(serverRequests.size());
         log.debug("Number of search server commands: {}", serverRequests.size());
-        for (int i = 0; i < serverRequests.size(); i++) {
-            log.debug("Configuring ElasticSearch query for server command {}", i);
-
-            SearchServerRequest serverRequest = serverRequests.get(i);
-            checkNotNull((Supplier<?>) () -> serverRequest, "Server request " + i);
-            stopIfError();
-            checkNotNull((Supplier<?>) () -> serverRequest.query, "Server request query for request " + i);
-            stopIfError();
-
-            if (null != serverRequest.query) {
-                handleSearchRequest(searchRequestBuilders, serverRequest);
-            }
-            if (null != serverRequest.suggestionText) {
-                handleSuggestionRequest(suggestionBuilders, serverRequest);
-            }
-
-        }
-
-        // Send the query to the server
+        final PrerequisiteChecker prChecker = PrerequisiteChecker.checkThat();
         try {
-            if (searchRequestBuilders.size() == elasticSearchCarrier.getServerRequests().size()) {
-                MultiSearchRequestBuilder multiSearch = client.prepareMultiSearch();
-                for (SearchRequestBuilder srb : searchRequestBuilders)
-                    multiSearch.add(srb);
-                log.debug("Issueing {} search request as a multi search", searchRequestBuilders.size());
-                MultiSearchResponse multiSearchResponse = multiSearch.execute().actionGet();
-                Item[] responses = multiSearchResponse.getResponses();
-                for (int i = 0; i < responses.length; i++) {
-                    Item item = responses[i];
-                    SearchResponse response = item.getResponse();
 
-                    log.trace("Response from ElasticSearch: {}", response);
+            for (int i = 0; i < serverRequests.size(); i++) {
+                log.debug("Configuring ElasticSearch query for server command {}", i);
 
-                    ElasticServerResponse serverRsp = new ElasticServerResponse(response, client);
+                SearchServerRequest serverRequest = serverRequests.get(i);
+                prChecker.notNull((Supplier<?>) () -> serverRequest)
+                        .notNull((Supplier<?>) () -> serverRequest.query)
+                        .withNames("Server request " + i, "Server request query for request " + i);
 
-                    if (null == response) {
+                checkDeepPagingParameters(serverRequest);
+
+                // If we have a deep pagination request with searchAfter, we need to create a "point in time" state
+                // of the index first
+                OpenPointInTimeResponse openPointInTimeResponse = null;
+                if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                    openPointInTimeResponse = client.openPointInTime(new OpenPointInTimeRequest(serverRequest.index).keepAlive(TimeValue.parseTimeValue(serverRequest.downloadCompleteResultMethodKeepAlive, "DownloadAll.afterSearch.PIT")), RequestOptions.DEFAULT);
+                }
+
+                if (null != serverRequest.query) {
+                    handleSearchRequest(searchRequests, openPointInTimeResponse, serverRequest);
+                }
+                if (null != serverRequest.suggestionText) {
+                    handleSuggestionRequest(suggestionBuilders, serverRequest);
+                }
+            }
+            prChecker.execute();
+
+            // Send the query to the server
+            if (searchRequests.size() == elasticSearchCarrier.getServerRequests().size()) {
+//                final MultiSearchRequest msr = new MultiSearchRequest();
+//                for (SearchRequest srb : searchRequests)
+//                    msr.add(srb);
+                log.debug("Issueing {} search request as a multi search", searchRequests.size());
+//                final MultiSearchResponse multiSearchResponse = client.msearch(msr, RequestOptions.DEFAULT);
+//                Item[] responses = multiSearchResponse.getResponses();
+                List<SearchResponse> responses = new ArrayList<>();
+                for (int i = 0; i < searchRequests.size(); i++) {
+//                    Item item = responses[i];
+//                    SearchResponse response = item.getResponse();
+                    final boolean isCountRequest = serverRequests.get(i).isCountRequest;
+                    SearchRequest sr = searchRequests.get(i);
+                    ElasticServerResponse serverRsp;
+                    try {
+                        SearchResponse response = null;
+                        CountResponse countResponse = null;
+                        if (!isCountRequest) {
+                            response = client.search(sr, RequestOptions.DEFAULT);
+                            log.trace("Response from ElasticSearch: {}", response);
+                        } else {
+                            countResponse = client.count(new CountRequest(sr.indices(), sr.source().query()), RequestOptions.DEFAULT);
+                            log.trace("Response from ElasticSearch: {}", countResponse);
+                        }
+
+                        serverRsp = new ElasticServerResponse(response, countResponse, serverRequests.get(i).downloadCompleteResults, serverRequests.get(i).downloadCompleteResultsLimit, searchRequests.get(i), client);
+                        int status = isCountRequest ? countResponse.status().getStatus() : response.status().getStatus();
+                        if (status > 299 && status < 200) {
+                            serverRsp.setQueryError(QueryError.QUERY_ERROR);
+//                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
+                            serverRsp.setQueryErrorMessage("HTTP status " + status);
+
+                        }
+                    } catch (IOException e) {
+                        serverRsp = new ElasticServerResponse();
                         serverRsp.setQueryError(QueryError.NO_RESPONSE);
-                        serverRsp.setQueryErrorMessage(item.getFailureMessage());
-
+                        serverRsp.setQueryErrorMessage(e.getMessage());
                     }
                     elasticSearchCarrier.addSearchResponse(serverRsp);
                 }
@@ -139,9 +175,9 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                         "There is at least one server request for which on ElasticSearch query could be created. This shouldn't happen.");
             }
             if (!suggestionBuilders.isEmpty()) {
-                for (SearchRequestBuilder suggestBuilder : suggestionBuilders) {
-                    SearchResponse suggestResponse = suggestBuilder.execute().actionGet();
-                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, client));
+                for (SearchRequest suggestBuilder : suggestionBuilders) {
+                    SearchResponse suggestResponse = client.search(suggestBuilder, RequestOptions.DEFAULT);
+                    elasticSearchCarrier.addSearchResponse(new ElasticServerResponse(suggestResponse, null, false, -1, null, client));
                 }
             }
             w.stop();
@@ -153,67 +189,115 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             serverRsp.setQueryErrorMessage(e.getMessage());
             elasticSearchCarrier.addSearchResponse(serverRsp);
             return true;
+        } catch (IOException e) {
+            log.error("IOException occurred while searching", e);
+            ElasticServerResponse serverRsp = new ElasticServerResponse();
+            serverRsp.setQueryError(QueryError.QUERY_ERROR);
+            serverRsp.setQueryErrorMessage(e.getMessage());
+            elasticSearchCarrier.addSearchResponse(serverRsp);
+            return true;
         }
 
         return false;
     }
 
-    protected void handleSuggestionRequest(List<SearchRequestBuilder> suggestBuilders, SearchServerRequest serverCmd) {
+    private void checkDeepPagingParameters(SearchServerRequest serverRequest) {
+        if (!serverRequest.suppressDownloadCompleteResultPerformanceChecks && serverRequest.downloadCompleteResults) {
+            final List<SortCommand> sortCmds = serverRequest.sortCmds;
+            if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("scroll")) {
+                if (!sortCmds.isEmpty()) {
+                    for (SortCommand cmd : sortCmds) {
+                        if (cmd.field.equals("_doc") && cmd.order == SortCommand.SortOrder.DESCENDING)
+                            log.warn("All results are downloaded with a scroll cursor. However, the sorting on the _doc field is set in descending order. This makes scroll slow. Use ascending order instead. This warning can be disabled in code the SearchServerRequest object.");
+                        else if (!cmd.field.equals("_doc"))
+                            log.warn("All results are downloaded with a scroll cursor. However, the sorting field is set to " + cmd.field + ". This makes scroll slow. Use ascending order instead. This warning can be disabled in code the SearchServerRequest object.");
+                    }
+                }
+            } else if (serverRequest.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                if (sortCmds.isEmpty())
+                    log.warn("All results are downloaded with a searchAfter cursor. However, no sorting is given. To make the retrieval more efficient, sort ascending (even though the ElasticSearch documentation says descending, our tests showed ascending was quicker) on the '_shard_doc' field. This warning can be disabled in code the SearchServerRequest object.");
+                else {
+                    for (SortCommand cmd : sortCmds) {
+                        if (cmd.field.equals("_shard_doc") && cmd.order == SortCommand.SortOrder.DESCENDING)
+                            log.warn("All results are downloaded with a searchAfter cursor. However, the sorting on the _shard_doc field is set in descending order. This makes searchAfter slow. Use ascending order instead. The ElasticSearch documentation says to sort descending but our tests showed that ascending was quicker. This warning can be disabled in code the SearchServerRequest object.");
+                    }
+                }
+            }
+        }
+    }
+
+    protected void handleSuggestionRequest(List<SearchRequest> suggestBuilders, SearchServerRequest serverCmd) {
         SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("",
                 SuggestBuilders.completionSuggestion(serverCmd.suggestionField).text(serverCmd.suggestionText));
-        SearchRequestBuilder suggestionRequestBuilder = client.prepareSearch(serverCmd.index).suggest(suggestBuilder);
 
-        suggestBuilders.add(suggestionRequestBuilder);
+        final SearchSourceBuilder suggestSourceBuilder = new SearchSourceBuilder().suggest(suggestBuilder);
+        final SearchRequest request = new SearchRequest(serverCmd.index).source(suggestSourceBuilder);
+
+        suggestBuilders.add(request);
         if (log.isDebugEnabled())
             log.debug("Suggesting on index {}. Created search query \"{}\".", serverCmd.index,
                     suggestBuilder.toString());
     }
 
-    protected void handleSearchRequest(List<SearchRequestBuilder> searchRequestBuilders,
-                                       SearchServerRequest serverCmd) {
+    protected void handleSearchRequest(List<SearchRequest> searchRequestBuilders,
+                                       OpenPointInTimeResponse openPointInTimeResponse, SearchServerRequest serverCmd) {
         if (null == serverCmd.fieldsToReturn)
             serverCmd.addField("*");
 
         if (serverCmd.index == null)
             throw new IllegalArgumentException("The search command does not define an index to search on.");
-        SearchRequestBuilder srb = client.prepareSearch(serverCmd.index);
-        if (serverCmd.indexTypes != null && !serverCmd.indexTypes.isEmpty())
-            srb.setTypes(serverCmd.indexTypes.toArray(new String[serverCmd.indexTypes.size()]));
+        final SearchSourceBuilder ssb = new SearchSourceBuilder();
+        final SearchRequest sr = new SearchRequest().source(ssb);
 
-        log.trace("Searching on index {} and types {}", serverCmd.index, serverCmd.indexTypes);
+        log.trace("Searching on index {}", serverCmd.index);
 
-        srb.setFetchSource(serverCmd.fetchSource);
-        // srb.setExplain(true);
+        ssb.fetchSource(serverCmd.fetchSource);
+        //ssb.explain(true)
 
-        if (serverCmd.downloadCompleteResults)
-            srb.setScroll(TimeValue.timeValueMinutes(5));
+        if (serverCmd.requestTimeout != null)
+            ssb.timeout(TimeValue.parseTimeValue(serverCmd.requestTimeout, "RequestTimeout"));
+
+        if (serverCmd.downloadCompleteResults) {
+            if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("scroll"))
+                sr.scroll(serverCmd.downloadCompleteResultMethodKeepAlive);
+            else if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter")) {
+                if (openPointInTimeResponse == null)
+                    throw new IllegalStateException("Download complete results is enabled but no point in time request was performed. This is coding error in this component.");
+                ssb.pointInTimeBuilder(new PointInTimeBuilder(openPointInTimeResponse.getPointInTimeId()));
+            } else
+                throw new IllegalArgumentException("Unknown deep pagination method '" + serverCmd.downloadCompleteResultsMethod + "'.");
+        }
 
         QueryBuilder queryBuilder = buildQuery(serverCmd.query);
-        srb.setQuery(queryBuilder);
+        ssb.query(queryBuilder);
+
 
         if (null != serverCmd.fieldsToReturn)
             for (String field : serverCmd.fieldsToReturn) {
-                srb.addStoredField(field);
+                ssb.storedField(field);
             }
 
-        srb.setFrom(serverCmd.start);
+        ssb.from(serverCmd.start);
         if (serverCmd.rows >= 0)
-            srb.setSize(serverCmd.rows);
+            ssb.size(serverCmd.rows);
         else
-            srb.setSize(0);
+            ssb.size(0);
+
+        if (serverCmd.trackTotalHitsUpTo != null)
+            ssb.trackTotalHitsUpTo(serverCmd.trackTotalHitsUpTo);
 
         if (null != serverCmd.aggregationRequests) {
             for (AggregationRequest aggCmd : serverCmd.aggregationRequests.values()) {
                 log.debug("Adding top aggregation command {} to query.", aggCmd.name);
                 AbstractAggregationBuilder<?> aggregationBuilder = buildAggregation(aggCmd);
                 if (aggregationBuilder != null)
-                    srb.addAggregation(aggregationBuilder);
+                    ssb.aggregation(aggregationBuilder);
             }
         }
 
         if (null != serverCmd.hlCmds && serverCmd.hlCmds.size() > 0) {
             HighlightBuilder hb = new HighlightBuilder();
-            srb.highlighter(hb);
+            ssb.highlighter(hb);
             for (int j = 0; j < serverCmd.hlCmds.size(); j++) {
                 HighlightCommand hlc = serverCmd.hlCmds.get(j);
                 for (HlField hlField : hlc.fields) {
@@ -235,12 +319,31 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                     if (null != hlField.highlightQuery) {
                         field.highlightQuery(buildQuery(hlField.highlightQuery));
                     }
-                    // preTags.add(hlc.pre);
-                    // postTags.add(hlc.post);
                     if (null != hlField.pre)
                         field.preTags(hlField.pre);
                     if (null != hlField.post)
                         field.postTags(hlField.post);
+                    if (hlField.boundaryChars != null)
+                        field.boundaryChars(hlField.boundaryChars);
+                    if (hlField.boundaryScanner != null)
+                        field.boundaryScannerType(hlField.boundaryScanner);
+                    if (hlField.boundaryMaxScan != null)
+                        field.boundaryMaxScan(hlField.boundaryMaxScan);
+                    if (hlField.boundaryScannerLocale != null)
+                        field.boundaryScannerLocale(hlField.boundaryScannerLocale);
+                    if (hlField.fields != null)
+                        field.matchedFields(hlField.fields);
+                    field.forceSource(hlField.forceSource);
+                    if (hlField.fragmenter != null)
+                        field.fragmenter(hlField.fragmenter);
+                    if (hlField.fragmentOffset != null)
+                        field.fragmentOffset(hlField.fragmentOffset);
+                    if (hlField.matchedFields != null)
+                        field.matchedFields(hlField.matchedFields);
+                    if (hlField.order != null)
+                        field.order(hlField.order);
+                    if (hlField.phraseLimit != null)
+                        field.phraseLimit(hlField.phraseLimit);
                     hb.field(field);
                 }
             }
@@ -263,18 +366,19 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                     default:
                         throw new IllegalArgumentException("Unknown sort order: " + sortCmd.order);
                 }
-                srb.addSort(sortCmd.field, sort);
+                ssb.sort(sortCmd.field, sort);
             }
-        }
+        } else if (serverCmd.downloadCompleteResults && serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter"))
+            throw new IllegalArgumentException("The searchAfter method is used for deep pagination but no sort command is given. A sort command is necessary on a unique field to be able to specify distinct result pages. Best performance is obtained by using the  internal _shard_doc field in descending order without tracking total hits.");
 
         if (null != serverCmd.postFilterQuery) {
             QueryBuilder postFilter = buildQuery(serverCmd.postFilterQuery);
-            srb.setPostFilter(postFilter);
+            ssb.postFilter(postFilter);
         }
 
-        searchRequestBuilders.add(srb);
+        searchRequestBuilders.add(sr);
 
-        log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, srb.toString());
+        log.debug("Searching on index {}. Created search query \"{}\".", serverCmd.index, ssb);
     }
 
     protected AbstractAggregationBuilder<?> buildAggregation(AggregationRequest aggCmd) {
@@ -284,25 +388,25 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             TermsAggregation termsAgg = (TermsAggregation) aggCmd;
 
             TermsAggregationBuilder termsBuilder = AggregationBuilders.terms(termsAgg.name).field(termsAgg.field);
-            List<Terms.Order> compoundOrder = new ArrayList<>();
+            List<BucketOrder> compoundOrder = new ArrayList<>();
             for (OrderCommand orderCmd : termsAgg.order) {
-                Terms.Order order = null;
+                BucketOrder order = null;
                 boolean ascending = false;
                 if (null != orderCmd && null != orderCmd.sortOrder)
                     ascending = orderCmd.sortOrder == OrderCommand.SortOrder.ASCENDING;
                 if (null != orderCmd) {
                     switch (orderCmd.referenceType) {
                         case AGGREGATION_MULTIVALUE:
-                            order = Terms.Order.aggregation(orderCmd.referenceName, orderCmd.metric.name(), ascending);
+                            order = BucketOrder.aggregation(orderCmd.referenceName, orderCmd.metric.name(), ascending);
                             break;
                         case AGGREGATION_SINGLE_VALUE:
-                            order = Terms.Order.aggregation(orderCmd.referenceName, ascending);
+                            order = BucketOrder.aggregation(orderCmd.referenceName, ascending);
                             break;
                         case COUNT:
-                            order = Terms.Order.count(ascending);
+                            order = BucketOrder.count(ascending);
                             break;
                         case TERM:
-                            order = Terms.Order.term(ascending);
+                            order = BucketOrder.key(ascending);
                             break;
                     }
                     if (null != order)
@@ -310,7 +414,7 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
                 }
             }
             if (!compoundOrder.isEmpty())
-                termsBuilder.order(Terms.Order.compound(compoundOrder));
+                termsBuilder.order(BucketOrder.compound(compoundOrder));
             if (null != termsAgg.size)
                 termsBuilder.size(termsAgg.size);
 
@@ -437,11 +541,35 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             queryBuilder = buildWildcardQuery((WildcardQuery) searchServerQuery);
         } else if (SimpleQueryStringQuery.class.equals(searchServerQuery.getClass())) {
             queryBuilder = buildSimpleQueryStringQuery((SimpleQueryStringQuery) searchServerQuery);
-        }
-        else {
+        } else if (RangeQuery.class.equals(searchServerQuery.getClass())) {
+            queryBuilder = buildRangeQuery((RangeQuery) searchServerQuery);
+        } else {
             throw new IllegalArgumentException("Unhandled query type: " + searchServerQuery.getClass());
         }
         return queryBuilder;
+    }
+
+    private QueryBuilder buildRangeQuery(RangeQuery rangeQuery) {
+        final RangeQueryBuilder builder = QueryBuilders.rangeQuery(rangeQuery.field);
+        if (rangeQuery.lessThan != null)
+            builder.to(rangeQuery.lessThan);
+        else if (rangeQuery.lessThanOrEqual != null)
+            builder.to(rangeQuery.lessThanOrEqual, true);
+        if (rangeQuery.greaterThan != null)
+            builder.from(rangeQuery.greaterThan);
+        else if (rangeQuery.greaterThanOrEqual != null)
+            builder.from(rangeQuery.greaterThanOrEqual, true);
+        if (rangeQuery.format != null)
+            builder.format(rangeQuery.format);
+        if (rangeQuery.timeZone != null)
+            builder.timeZone(rangeQuery.timeZone);
+        if (rangeQuery.relation != null)
+            builder.relation(rangeQuery.relation.name());
+
+        if (rangeQuery.boost != 1f)
+            builder.boost(rangeQuery.boost);
+
+        return builder;
     }
 
     private QueryBuilder buildSimpleQueryStringQuery(SimpleQueryStringQuery simpleQueryStringQuery) {
@@ -645,8 +773,9 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
     }
 
     protected QueryBuilder buildMultiMatchQuery(MultiMatchQuery query) {
-        log.trace("Building query string query.");
+        log.trace("Building multi match query (a match query over multiple fields).");
         MultiMatchQueryBuilder multiMatchQueryBuilder = new MultiMatchQueryBuilder(query.query);
+        multiMatchQueryBuilder.operator(Operator.valueOf(query.operator.toUpperCase()));
         for (int i = 0; i < query.fields.size(); i++) {
             String field = query.fields.get(i);
             Float weight;
@@ -656,27 +785,27 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
             } else {
                 multiMatchQueryBuilder.field(field);
             }
-            if (null != query.type) {
-                MultiMatchQueryBuilder.Type multiFieldMatchType = null;
-                switch (query.type) {
-                    case best_fields:
-                        multiFieldMatchType = Type.BEST_FIELDS;
-                        break;
-                    case cross_fields:
-                        multiFieldMatchType = Type.CROSS_FIELDS;
-                        break;
-                    case most_fields:
-                        multiFieldMatchType = Type.MOST_FIELDS;
-                        break;
-                    case phrase:
-                        multiFieldMatchType = Type.PHRASE;
-                        break;
-                    case phrase_prefix:
-                        multiFieldMatchType = Type.PHRASE_PREFIX;
-                        break;
-                }
-                multiMatchQueryBuilder.type(multiFieldMatchType);
+        }
+        if (null != query.type) {
+            MultiMatchQueryBuilder.Type multiFieldMatchType = null;
+            switch (query.type) {
+                case best_fields:
+                    multiFieldMatchType = Type.BEST_FIELDS;
+                    break;
+                case cross_fields:
+                    multiFieldMatchType = Type.CROSS_FIELDS;
+                    break;
+                case most_fields:
+                    multiFieldMatchType = Type.MOST_FIELDS;
+                    break;
+                case phrase:
+                    multiFieldMatchType = Type.PHRASE;
+                    break;
+                case phrase_prefix:
+                    multiFieldMatchType = Type.PHRASE_PREFIX;
+                    break;
             }
+            multiMatchQueryBuilder.type(multiFieldMatchType);
         }
         return multiMatchQueryBuilder;
     }

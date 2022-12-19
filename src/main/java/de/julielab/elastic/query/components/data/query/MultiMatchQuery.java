@@ -46,4 +46,17 @@ public class MultiMatchQuery extends SearchServerQuery{
 			fields = new ArrayList<>();
 		fields.add(field);
 	}
+
+	@Override
+	public String toString() {
+		StringBuilder fieldsSb = new StringBuilder();
+		for (int i = 0; i < fields.size(); i++) {
+			fieldsSb.append(fields.get(i));
+			if (fieldWeights != null && i < fieldWeights.size())
+				fieldsSb.append("^").append(String.valueOf(fieldWeights.get(i)));
+			fieldsSb.append(",");
+		}
+		fieldsSb.deleteCharAt(fieldsSb.length() - 1);
+		return "MultiMatch [fields:'" + fieldsSb + "', query: '" + query + "', operator: '"+operator+"', type: '" + type + "']";
+	}
 }
