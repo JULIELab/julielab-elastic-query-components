@@ -293,7 +293,8 @@ public class ElasticServerResponse implements IElasticServerResponse {
             public ISearchServerDocument next() {
                 if (!hasNext())
                     return null;
-                log.trace("Returning next document at position {} of the current scroll batch.", pos);
+                if (pos > 0 && pos % 200 == 0)
+                log.info("Returning next document at position {} of the current scroll batch.", pos);
                 SearchHit hit = currentHits[pos++];
                 ++documentsReturned;
                 return new ElasticSearchDocumentHit(hit);

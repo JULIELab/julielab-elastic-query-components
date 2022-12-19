@@ -1,17 +1,15 @@
 package de.julielab.elastic.query.components;
 
-import de.julielab.elastic.query.ElasticQuerySymbolConstants;
-import de.julielab.elastic.query.components.data.*;
+import de.julielab.elastic.query.components.data.ElasticSearchCarrier;
+import de.julielab.elastic.query.components.data.ISearchServerDocument;
+import de.julielab.elastic.query.components.data.SearchServerRequest;
+import de.julielab.elastic.query.components.data.SortCommand;
 import de.julielab.elastic.query.components.data.query.MatchAllQuery;
 import de.julielab.elastic.query.components.data.query.TermQuery;
-import de.julielab.elastic.query.services.ElasticSearchClient;
 import de.julielab.elastic.query.services.ElasticSearchClientProvider;
 import de.julielab.elastic.query.services.IElasticServerResponse;
 import de.julielab.java.utilities.FileUtilities;
-import de.julielab.java.utilities.IOStreamUtilities;
-import org.apache.tapestry5.ioc.RegistryBuilder;
 import org.apache.tapestry5.ioc.internal.LoggerSourceImpl;
-import org.elasticsearch.monitor.fs.FsInfo;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
@@ -24,7 +22,9 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
 import org.testcontainers.shaded.org.apache.commons.io.IOUtils;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -115,7 +115,7 @@ public class ElasticSearchComponentTest {
             log.debug("Response for the count of documents: {}", countResponse);
             assertTrue(countResponse.contains("count\":3"));
         }
-        esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200))));
+        esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200)), 30000));
     }
 
     @Test

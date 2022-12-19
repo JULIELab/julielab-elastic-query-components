@@ -7,7 +7,6 @@ import de.julielab.elastic.query.components.data.SortCommand;
 import de.julielab.elastic.query.components.data.query.MatchAllQuery;
 import de.julielab.elastic.query.services.ElasticSearchClientProvider;
 import de.julielab.elastic.query.services.IElasticServerResponse;
-import de.julielab.java.utilities.FileUtilities;
 import org.apache.tapestry5.ioc.internal.LoggerSourceImpl;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -21,7 +20,6 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
 import org.testcontainers.shaded.org.apache.commons.io.IOUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -131,7 +129,7 @@ public class DeepPaginationTest {
             log.debug("Response for the count of documents: {}", countResponse);
             assertTrue(countResponse.contains("count\":" + NUM_DOCS));
         }
-        esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200))));
+        esSearchComponent = new ElasticSearchComponent<>(LoggerFactory.getLogger(ElasticSearchComponent.class), new ElasticSearchClientProvider(LoggerFactory.getLogger(ElasticSearchClientProvider.class), new LoggerSourceImpl(), TEST_CLUSTER, "localhost", String.valueOf(es.getMappedPort(9200)), 30000));
     }
 
     @Test

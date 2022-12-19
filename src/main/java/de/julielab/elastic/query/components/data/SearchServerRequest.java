@@ -18,15 +18,11 @@
  */
 package de.julielab.elastic.query.components.data;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import de.julielab.elastic.query.components.data.SortCommand.SortOrder;
 import de.julielab.elastic.query.components.data.aggregation.AggregationRequest;
 import de.julielab.elastic.query.components.data.query.SearchServerQuery;
+
+import java.util.*;
 
 /**
  * @author faessler
@@ -144,6 +140,12 @@ public class SearchServerRequest {
      * The number of hits to track with accuracy. Specify Integer.MAX_VALUE if you need total accurate hit counts.
      */
     public Integer trackTotalHitsUpTo;
+
+    /**
+     * <p>The format is described in the ElasticSearch documentation.</p>
+     * @see <url>https://www.elastic.co/guide/en/elasticsearch/reference/current/sql-functions-datetime.html</url>
+     */
+    public String requestTimeout;
 
     public void addField(String field) {
         if (null == fieldsToReturn)

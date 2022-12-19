@@ -5,4 +5,5 @@ public class ElasticQuerySymbolConstants {
 
 	public static final String ES_HOST = "elasticquery.url";
 	public static final String ES_PORT = "elasticquery.port";
+	public static final String ES_SOCKET_TIMEOUT = "elasticquery.sockettimeout";
 }

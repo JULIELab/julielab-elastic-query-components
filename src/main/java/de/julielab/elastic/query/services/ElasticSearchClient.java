@@ -14,8 +14,10 @@ public class ElasticSearchClient implements ISearchClient {
 	private int[] ports;
 	private RestHighLevelClient client;
 	private Logger log;
+	private int socketTimeout;
 
-	public ElasticSearchClient(Logger log, String clusterName, String[] hosts, int[] ports) {
+	public ElasticSearchClient(Logger log, String clusterName, String[] hosts, int[] ports, int socketTimeout) {
+		this.socketTimeout = socketTimeout;
 		if (hosts.length != ports.length)
 			throw new IllegalArgumentException("The number of hosts and ports must be equal.");
 		this.log = log;
@@ -30,7 +32,9 @@ public class ElasticSearchClient implements ISearchClient {
 				log.info("Connecting to a ElasticSearch cluster {} via socket connection \"{}:{}\".",
 						new Object[] { clusterName, hosts, ports});
 				HttpHost[] httpHosts = IntStream.range(0, hosts.length).mapToObj(i -> new HttpHost(hosts[i], ports[i], "http")).toArray(HttpHost[]::new);
-				client = new RestHighLevelClient(RestClient.builder(httpHosts));
+				client = new RestHighLevelClient(RestClient.builder(httpHosts)
+						// https://discuss.elastic.co/t/how-to-avoid-30-000ms-timeout-during-reindexing/231370
+						.setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder.setSocketTimeout(socketTimeout)));
 			}
 			return client;
 	}

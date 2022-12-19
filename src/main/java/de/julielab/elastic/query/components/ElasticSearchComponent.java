@@ -254,6 +254,9 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         ssb.fetchSource(serverCmd.fetchSource);
         //ssb.explain(true)
 
+        if (serverCmd.requestTimeout != null)
+            ssb.timeout(TimeValue.parseTimeValue(serverCmd.requestTimeout, "RequestTimeout"));
+
         if (serverCmd.downloadCompleteResults) {
             if (serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("scroll"))
                 sr.scroll(serverCmd.downloadCompleteResultMethodKeepAlive);
