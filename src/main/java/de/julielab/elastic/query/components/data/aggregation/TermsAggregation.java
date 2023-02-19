@@ -2,6 +2,7 @@ package de.julielab.elastic.query.components.data.aggregation;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,7 +22,7 @@ public class TermsAggregation extends AggregationRequest {
 	 * Specifies the ordering of the aggregation buckets. Defaults to bucket
 	 * size.
 	 */
-	public List<OrderCommand> order;
+	public List<OrderCommand> order = Collections.emptyList();
 	/**
 	 * Either a string that will be interpreted as a regular expression matching
 	 * terms to include or an instance of {@link Collection} or an array containing field values (of type String, Long or Double)
