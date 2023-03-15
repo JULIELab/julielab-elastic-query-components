@@ -249,6 +249,10 @@ public class ElasticSearchComponent<C extends ElasticSearchCarrier<IElasticServe
         final SearchSourceBuilder ssb = new SearchSourceBuilder();
         final SearchRequest sr = new SearchRequest().source(ssb);
 
+        // We cannot use PIT with an index, it is already given to the PIT request that is called before this method
+        if(!serverCmd.downloadCompleteResultsMethod.equalsIgnoreCase("searchAfter"))
+            sr.indices(serverCmd.index);
+
         log.trace("Searching on index {}", serverCmd.index);
 
         ssb.fetchSource(serverCmd.fetchSource);
