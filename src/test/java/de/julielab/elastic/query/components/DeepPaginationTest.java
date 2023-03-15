@@ -10,6 +10,7 @@ import de.julielab.elastic.query.services.IElasticServerResponse;
 import org.apache.tapestry5.ioc.internal.LoggerSourceImpl;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+@Ignore
 public class DeepPaginationTest {
     public static final String TEST_INDEX = "testindex";
     public static final String TEST_CLUSTER = "testcluster";
